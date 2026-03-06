@@ -14,12 +14,6 @@ class Player(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    user_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
     team_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("teams.id"),

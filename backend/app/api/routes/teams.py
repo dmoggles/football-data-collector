@@ -65,7 +65,7 @@ def create_team(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TeamResponse:
-    team = Team(user_id=user.id, name=payload.name.strip())
+    team = Team(name=payload.name.strip())
     db.add(team)
     db.flush()
 
@@ -226,4 +226,5 @@ def delete_team_member(
     db.delete(membership)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 

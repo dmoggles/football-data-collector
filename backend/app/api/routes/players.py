@@ -43,7 +43,6 @@ def create_player(
     ensure_team_admin(db, payload.team_id, user.id)
 
     player = Player(
-        user_id=user.id,
         team_id=payload.team_id,
         display_name=payload.display_name.strip(),
         shirt_number=payload.shirt_number,
