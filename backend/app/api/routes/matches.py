@@ -32,6 +32,8 @@ def build_match_response(
         away_team_name=away_team_name,
         away_club_name=away_club_name,
         format=match.format,
+        period_format=match.period_format,
+        period_length_minutes=match.period_length_minutes,
         kickoff_at=match.kickoff_at,
         status=match.status,
         can_manage=can_manage,
@@ -193,6 +195,8 @@ def create_match(
         home_team_id=payload.home_team_id,
         away_team_id=payload.away_team_id,
         format=payload.format.value,
+        period_format=payload.period_format.value,
+        period_length_minutes=payload.period_length_minutes,
         kickoff_at=payload.kickoff_at,
         status=payload.status.strip(),
     )
@@ -234,6 +238,8 @@ def update_match(
     fixture.home_team_id = payload.home_team_id
     fixture.away_team_id = payload.away_team_id
     fixture.format = payload.format.value
+    fixture.period_format = payload.period_format.value
+    fixture.period_length_minutes = payload.period_length_minutes
     fixture.kickoff_at = payload.kickoff_at
     fixture.status = payload.status.strip()
     db.commit()

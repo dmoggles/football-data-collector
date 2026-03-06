@@ -41,6 +41,7 @@ import type {
   AdminOverview,
   Fixture,
   MatchFormat,
+  MatchPeriodFormat,
   Player,
   Team,
   TeamDirectory,
@@ -67,6 +68,11 @@ const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
   { value: "7_aside", label: "7 Aside" },
   { value: "9_aside", label: "9 Aside" },
   { value: "11_aside", label: "11 Aside" },
+];
+const MATCH_PERIOD_FORMAT_OPTIONS: Array<{ value: MatchPeriodFormat; label: string }> = [
+  { value: "halves", label: "Halves" },
+  { value: "quarters", label: "Quarters" },
+  { value: "non_stop", label: "Non-stop" },
 ];
 const FIXTURE_STATUS_OPTIONS = [
   { value: "scheduled", label: "Scheduled" },
@@ -334,6 +340,8 @@ function App() {
   const [fixtureTeamId, setFixtureTeamId] = useState("");
   const [fixtureOpponentTeamId, setFixtureOpponentTeamId] = useState("");
   const [fixtureFormat, setFixtureFormat] = useState<MatchFormat>("11_aside");
+  const [fixturePeriodFormat, setFixturePeriodFormat] = useState<MatchPeriodFormat>("halves");
+  const [fixturePeriodLengthMinutes, setFixturePeriodLengthMinutes] = useState("35");
   const [fixtureVenue, setFixtureVenue] = useState<FixtureVenue>("home");
   const [fixtureKickoffDate, setFixtureKickoffDate] = useState("");
   const [fixtureKickoffTime, setFixtureKickoffTime] = useState("");
@@ -816,6 +824,8 @@ function App() {
   const resetFixtureForm = () => {
     setEditingFixtureId("");
     setFixtureFormat("11_aside");
+    setFixturePeriodFormat("halves");
+    setFixturePeriodLengthMinutes("35");
     setFixtureVenue("home");
     setFixtureKickoffDate("");
     setFixtureKickoffTime("");
@@ -827,6 +837,8 @@ function App() {
   const openFixtureComposer = (date: Date | null = null) => {
     setEditingFixtureId("");
     setFixtureFormat("11_aside");
+    setFixturePeriodFormat("halves");
+    setFixturePeriodLengthMinutes("35");
     setFixtureVenue("home");
     setFixtureStatus("scheduled");
     setFixtureOpponentTeamId("");
@@ -858,6 +870,11 @@ function App() {
       setError("Select a kickoff time in 15-minute increments");
       return;
     }
+    const parsedPeriodLength = Number(fixturePeriodLengthMinutes);
+    if (!Number.isInteger(parsedPeriodLength) || parsedPeriodLength < 1 || parsedPeriodLength > 120) {
+      setError("Period length must be between 1 and 120 minutes");
+      return;
+    }
 
     setError(null);
     setIsSubmitting(true);
@@ -869,6 +886,8 @@ function App() {
         home_team_id: fixtureVenue === "home" ? fixtureTeamId : fixtureOpponentTeamId,
         away_team_id: fixtureVenue === "home" ? fixtureOpponentTeamId : fixtureTeamId,
         format: fixtureFormat,
+        period_format: fixturePeriodFormat,
+        period_length_minutes: parsedPeriodLength,
         kickoff_at: kickoffAt,
         status: editingFixtureId ? fixtureStatus.trim() || "scheduled" : "scheduled",
       };
@@ -921,6 +940,8 @@ function App() {
     const oppositionTeamId = selectedTeamIsHome ? fixture.away_team_id : fixture.home_team_id;
     setFixtureOpponentTeamId(oppositionTeamId);
     setFixtureFormat(fixture.format);
+    setFixturePeriodFormat(fixture.period_format as MatchPeriodFormat);
+    setFixturePeriodLengthMinutes(String(fixture.period_length_minutes));
     setFixtureStatus(
       FIXTURE_STATUS_OPTIONS.some((option) => option.value === fixture.status.toLowerCase())
         ? fixture.status.toLowerCase()
@@ -1621,7 +1642,7 @@ function App() {
                                         minute: "2-digit",
                                       })}`
                                     : ""
-                                } · ${fixture.format.replace("_", " ")}`}
+                                } · ${fixture.format.replace("_", " ")} · ${fixture.period_format.replace("_", " ")} · ${fixture.period_length_minutes} min`}
                               >
                                 <span className={`fixture-venue-badge ${venueLabel === "H" ? "home" : "away"}`}>
                                   {venueLabel}
@@ -1686,6 +1707,25 @@ function App() {
                       </option>
                     ))}
                   </select>
+                  <select
+                    value={fixturePeriodFormat}
+                    onChange={(event) => setFixturePeriodFormat(event.target.value as MatchPeriodFormat)}
+                  >
+                    {MATCH_PERIOD_FORMAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={fixturePeriodLengthMinutes}
+                    onChange={(event) => setFixturePeriodLengthMinutes(event.target.value)}
+                    placeholder="Period length (minutes)"
+                    required
+                  />
                   <div className="member-actions">
                     <input
                       type="date"

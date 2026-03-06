@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, func, text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -13,6 +13,12 @@ class MatchFormat(StrEnum):
     SEVEN_ASIDE = "7_aside"
     NINE_ASIDE = "9_aside"
     ELEVEN_ASIDE = "11_aside"
+
+
+class MatchPeriodFormat(StrEnum):
+    HALVES = "halves"
+    QUARTERS = "quarters"
+    NON_STOP = "non_stop"
 
 
 class Match(Base):
@@ -32,6 +38,18 @@ class Match(Base):
         nullable=False,
         default=MatchFormat.ELEVEN_ASIDE.value,
         server_default=text("'11_aside'"),
+    )
+    period_format: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=MatchPeriodFormat.HALVES.value,
+        server_default=text("'halves'"),
+    )
+    period_length_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=35,
+        server_default=text("35"),
     )
     kickoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="scheduled")

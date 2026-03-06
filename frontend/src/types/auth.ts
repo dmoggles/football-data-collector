@@ -82,6 +82,7 @@ export type Player = {
 };
 
 export type MatchFormat = "5_aside" | "7_aside" | "9_aside" | "11_aside";
+export type MatchPeriodFormat = "halves" | "quarters" | "non_stop";
 
 export type Fixture = {
   id: string;
@@ -92,6 +93,8 @@ export type Fixture = {
   away_team_name: string;
   away_club_name: string;
   format: MatchFormat;
+  period_format: MatchPeriodFormat;
+  period_length_minutes: number;
   kickoff_at: string | null;
   status: string;
   can_manage: boolean;
@@ -127,6 +130,8 @@ export type FixturePayload = {
   home_team_id: string;
   away_team_id: string;
   format: MatchFormat;
+  period_format: MatchPeriodFormat;
+  period_length_minutes: number;
   kickoff_at: string | null;
   status: string;
 };

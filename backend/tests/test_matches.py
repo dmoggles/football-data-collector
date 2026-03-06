@@ -73,6 +73,8 @@ def test_team_admin_can_create_fixture_with_format() -> None:
             "home_team_id": home_team_id,
             "away_team_id": away_team_id,
             "format": "7_aside",
+            "period_format": "halves",
+            "period_length_minutes": 35,
             "kickoff_at": "2026-04-10T18:00:00Z",
             "status": "scheduled",
         },
@@ -80,6 +82,8 @@ def test_team_admin_can_create_fixture_with_format() -> None:
     assert fixture_response.status_code == 201
     payload = fixture_response.json()
     assert payload["format"] == "7_aside"
+    assert payload["period_format"] == "halves"
+    assert payload["period_length_minutes"] == 35
     assert payload["can_manage"] is True
 
 
@@ -109,6 +113,8 @@ def test_data_enterer_can_view_fixtures_but_cannot_create() -> None:
             "home_team_id": home_team_id,
             "away_team_id": away_team_id,
             "format": "11_aside",
+            "period_format": "halves",
+            "period_length_minutes": 35,
             "status": "scheduled",
         },
     )
@@ -133,6 +139,8 @@ def test_data_enterer_can_view_fixtures_but_cannot_create() -> None:
             "home_team_id": home_team_id,
             "away_team_id": away_team_id,
             "format": "5_aside",
+            "period_format": "quarters",
+            "period_length_minutes": 20,
             "status": "scheduled",
         },
     )
@@ -165,6 +173,8 @@ def test_team_admin_can_update_and_delete_fixture() -> None:
             "home_team_id": home_team_id,
             "away_team_id": away_team_id,
             "format": "9_aside",
+            "period_format": "halves",
+            "period_length_minutes": 30,
             "status": "scheduled",
         },
     )
@@ -177,11 +187,15 @@ def test_team_admin_can_update_and_delete_fixture() -> None:
             "home_team_id": home_team_id,
             "away_team_id": away_team_id,
             "format": "11_aside",
+            "period_format": "quarters",
+            "period_length_minutes": 15,
             "status": "final",
         },
     )
     assert update_response.status_code == 200
     assert update_response.json()["format"] == "11_aside"
+    assert update_response.json()["period_format"] == "quarters"
+    assert update_response.json()["period_length_minutes"] == 15
     assert update_response.json()["status"] == "final"
 
     delete_response = client.delete(f"/matches/{fixture_id}")
