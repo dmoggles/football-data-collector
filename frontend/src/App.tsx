@@ -145,7 +145,7 @@ function App() {
     return adminOverview.teams.filter((team) => team.owners.length === 0);
   }, [adminOverview, showUnclaimedOnly]);
   const roleByTeamId = useMemo(() => {
-    const mapping: Record<string, TeamRole> = {};
+    const mapping: Partial<Record<string, TeamRole>> = {};
     for (const team of teams) {
       mapping[team.id] = team.my_role;
     }
@@ -155,8 +155,8 @@ function App() {
     () =>
       Boolean(
         selectedTeamForPlayers &&
-          roleByTeamId[selectedTeamForPlayers] &&
-          isTeamAdminRole(roleByTeamId[selectedTeamForPlayers]),
+          (!roleByTeamId[selectedTeamForPlayers] ||
+            isTeamAdminRole(roleByTeamId[selectedTeamForPlayers])),
       ),
     [roleByTeamId, selectedTeamForPlayers],
   );
@@ -164,8 +164,8 @@ function App() {
     () =>
       Boolean(
         selectedTeamForMembers &&
-          roleByTeamId[selectedTeamForMembers] &&
-          isTeamAdminRole(roleByTeamId[selectedTeamForMembers]),
+          (!roleByTeamId[selectedTeamForMembers] ||
+            isTeamAdminRole(roleByTeamId[selectedTeamForMembers])),
       ),
     [roleByTeamId, selectedTeamForMembers],
   );
@@ -912,8 +912,8 @@ function App() {
                     className="button secondary"
                     onClick={() => handleDeleteTeam(team.id)}
                     type="button"
-                    disabled={isSubmitting || !isTeamAdminRole(team.my_role)}
-                    title={isTeamAdminRole(team.my_role) ? "Delete team" : "Team admin access required"}
+                    disabled={isSubmitting || (team.my_role ? !isTeamAdminRole(team.my_role) : false)}
+                    title={team.my_role && !isTeamAdminRole(team.my_role) ? "Team admin access required" : "Delete team"}
                   >
                     Delete
                   </button>
@@ -1000,7 +1000,11 @@ function App() {
                     onClick={() => handleDeletePlayer(player.id)}
                     type="button"
                     disabled={
-                      isSubmitting || !isTeamAdminRole(roleByTeamId[player.team_id] ?? "data_enterer")
+                      isSubmitting ||
+                      (() => {
+                        const role = roleByTeamId[player.team_id];
+                        return role !== undefined && !isTeamAdminRole(role);
+                      })()
                     }
                   >
                     Delete

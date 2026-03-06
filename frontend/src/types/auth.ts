@@ -53,7 +53,7 @@ export type Team = {
   club_id: string;
   club_name: string;
   team_name: string;
-  my_role: TeamRole;
+  my_role?: TeamRole;
   display_name: string;
 };
 
