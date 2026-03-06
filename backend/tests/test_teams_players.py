@@ -23,7 +23,10 @@ def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
     owner_email, owner_password = _register("owner")
     _login(owner_email, owner_password)
 
-    create_team_response = client.post("/teams", json={"name": "Arrows FC"})
+    create_team_response = client.post(
+        "/teams",
+        json={"club_name": "Arrows", "team_name": "FC"},
+    )
     assert create_team_response.status_code == 201
     team_id = create_team_response.json()["id"]
 
@@ -48,7 +51,10 @@ def test_data_enterer_cannot_modify_team_or_players() -> None:
     owner_email, owner_password = _register("owner2")
     _login(owner_email, owner_password)
 
-    create_team_response = client.post("/teams", json={"name": "Rangers"})
+    create_team_response = client.post(
+        "/teams",
+        json={"club_name": "Rangers", "team_name": "First XI"},
+    )
     assert create_team_response.status_code == 201
     team_id = create_team_response.json()["id"]
 
@@ -78,5 +84,8 @@ def test_data_enterer_cannot_modify_team_or_players() -> None:
     )
     assert create_player_response.status_code == 403
 
-    update_team_response = client.patch(f"/teams/{team_id}", json={"name": "Hacked"})
+    update_team_response = client.patch(
+        f"/teams/{team_id}",
+        json={"club_name": "Hacked", "team_name": "Team"},
+    )
     assert update_team_response.status_code == 403

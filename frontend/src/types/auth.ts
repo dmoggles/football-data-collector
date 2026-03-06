@@ -7,7 +7,10 @@ export type User = {
 
 export type Team = {
   id: string;
-  name: string;
+  club_id: string;
+  club_name: string;
+  team_name: string;
+  display_name: string;
 };
 
 export type TeamMember = {
@@ -32,7 +35,8 @@ export type AuthPayload = {
 };
 
 export type TeamPayload = {
-  name: string;
+  club_name: string;
+  team_name: string;
 };
 
 export type AddTeamMemberPayload = {
@@ -50,4 +54,3 @@ export type PlayerPayload = {
   shirt_number: number | null;
   position: string | null;
 };
-

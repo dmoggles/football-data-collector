@@ -4,11 +4,13 @@ from app.models.team_membership import TeamRole
 
 
 class TeamCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+    club_name: str = Field(min_length=1, max_length=120)
+    team_name: str = Field(min_length=1, max_length=120)
 
 
 class TeamUpdateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+    club_name: str = Field(min_length=1, max_length=120)
+    team_name: str = Field(min_length=1, max_length=120)
 
 
 class TeamMemberCreateRequest(BaseModel):
@@ -31,7 +33,7 @@ class TeamMemberResponse(BaseModel):
 
 
 class TeamResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: str
-    name: str
+    club_id: str
+    club_name: str
+    team_name: str

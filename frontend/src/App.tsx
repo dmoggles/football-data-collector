@@ -44,6 +44,7 @@ function App() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
+  const [clubName, setClubName] = useState("");
   const [teamName, setTeamName] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [shirtNumber, setShirtNumber] = useState("");
@@ -63,12 +64,12 @@ function App() {
   const [isMembersLoading, setIsMembersLoading] = useState(false);
 
   const selectedTeamForPlayersName = useMemo(
-    () => teams.find((team) => team.id === selectedTeamForPlayers)?.name ?? "",
+    () => teams.find((team) => team.id === selectedTeamForPlayers)?.display_name ?? "",
     [selectedTeamForPlayers, teams],
   );
 
   const selectedTeamForMembersName = useMemo(
-    () => teams.find((team) => team.id === selectedTeamForMembers)?.name ?? "",
+    () => teams.find((team) => team.id === selectedTeamForMembers)?.display_name ?? "",
     [selectedTeamForMembers, teams],
   );
 
@@ -217,9 +218,15 @@ function App() {
     setIsSubmitting(true);
 
     try {
-      const created = await createTeam({ name: teamName.trim() });
+      const created = await createTeam({
+        club_name: clubName.trim(),
+        team_name: teamName.trim(),
+      });
+      setClubName("");
       setTeamName("");
-      setTeams((existing) => [...existing, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setTeams((existing) =>
+        [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)),
+      );
       setSelectedTeamForPlayers(created.id);
       setSelectedTeamForMembers(created.id);
     } catch (requestError) {
@@ -516,6 +523,12 @@ function App() {
             <form className="stack-form" onSubmit={handleCreateTeam}>
               <h3>Create Team</h3>
               <input
+                placeholder="Club name"
+                value={clubName}
+                onChange={(event) => setClubName(event.target.value)}
+                required
+              />
+              <input
                 placeholder="Team name"
                 value={teamName}
                 onChange={(event) => setTeamName(event.target.value)}
@@ -531,7 +544,7 @@ function App() {
               {teams.length === 0 ? <p className="muted">No teams yet.</p> : null}
               {teams.map((team) => (
                 <div className="list-row" key={team.id}>
-                  <span>{team.name}</span>
+                  <span>{team.display_name}</span>
                   <button
                     className="button secondary"
                     onClick={() => handleDeleteTeam(team.id)}
@@ -566,7 +579,7 @@ function App() {
                 </option>
                 {teams.map((team) => (
                   <option key={team.id} value={team.id}>
-                    {team.name}
+                    {team.display_name}
                   </option>
                 ))}
               </select>
@@ -638,7 +651,7 @@ function App() {
                 </option>
                 {teams.map((team) => (
                   <option key={team.id} value={team.id}>
-                    {team.name}
+                    {team.display_name}
                   </option>
                 ))}
               </select>
@@ -718,5 +731,4 @@ function App() {
 }
 
 export default App;
-
 

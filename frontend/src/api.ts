@@ -13,6 +13,7 @@ import type {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type TeamApiResponse = Omit<Team, "display_name">;
 
 class ApiError extends Error {
   status: number;
@@ -66,6 +67,13 @@ async function request<TResponse>(
   return (await response.json()) as TResponse;
 }
 
+function toTeam(team: TeamApiResponse): Team {
+  return {
+    ...team,
+    display_name: `${team.club_name} ${team.team_name}`,
+  };
+}
+
 export async function register(payload: AuthPayload): Promise<User> {
   return request<User>("/auth/register", "POST", payload);
 }
@@ -83,11 +91,13 @@ export async function getMe(): Promise<User> {
 }
 
 export async function listTeams(): Promise<Team[]> {
-  return request<Team[]>("/teams", "GET");
+  const teams = await request<TeamApiResponse[]>("/teams", "GET");
+  return teams.map(toTeam);
 }
 
 export async function createTeam(payload: TeamPayload): Promise<Team> {
-  return request<Team>("/teams", "POST", payload);
+  const team = await request<TeamApiResponse>("/teams", "POST", payload);
+  return toTeam(team);
 }
 
 export async function deleteTeam(teamId: string): Promise<void> {

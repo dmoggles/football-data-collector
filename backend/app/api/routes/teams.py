@@ -11,6 +11,7 @@ from app.api.entitlements import (
     get_team_or_404,
     require_team_admin,
 )
+from app.models.club import Club
 from app.models.player import Player
 from app.models.team import Team
 from app.models.team_membership import TeamMembership, TeamRole
@@ -44,19 +45,41 @@ def build_team_member_response(db: Session, membership: TeamMembership) -> TeamM
     )
 
 
+def build_team_response(team: Team, club_name: str) -> TeamResponse:
+    return TeamResponse(
+        id=team.id,
+        club_id=team.club_id,
+        club_name=club_name,
+        team_name=team.name,
+    )
+
+
+def get_or_create_club(db: Session, club_name: str) -> Club:
+    normalized_name = club_name.strip()
+    club = db.scalar(select(Club).where(Club.name == normalized_name))
+    if club:
+        return club
+
+    club = Club(name=normalized_name)
+    db.add(club)
+    db.flush()
+    return club
+
+
 @router.get("", response_model=list[TeamResponse])
 def list_teams(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[TeamResponse]:
     query = (
-        select(Team)
+        select(Team, Club.name)
+        .join(Club, Club.id == Team.club_id)
         .join(TeamMembership, TeamMembership.team_id == Team.id)
         .where(TeamMembership.user_id == user.id)
-        .order_by(Team.name.asc())
+        .order_by(Club.name.asc(), Team.name.asc())
     )
-    teams = db.scalars(query).all()
-    return [TeamResponse.model_validate(team) for team in teams]
+    rows = db.execute(query).all()
+    return [build_team_response(team, club_name) for team, club_name in rows]
 
 
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
@@ -65,16 +88,25 @@ def create_team(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TeamResponse:
-    team = Team(name=payload.name.strip())
+    club = get_or_create_club(db, payload.club_name)
+    team = Team(name=payload.team_name.strip(), club_id=club.id)
     db.add(team)
     db.flush()
 
     membership = TeamMembership(team_id=team.id, user_id=user.id, role=TeamRole.ADMIN.value)
     db.add(membership)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Team already exists for this club",
+        ) from exc
+
     db.refresh(team)
-    return TeamResponse.model_validate(team)
+    return build_team_response(team, club.name)
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
@@ -86,11 +118,22 @@ def update_team(
 ) -> TeamResponse:
     ensure_team_admin(db, team_id, user.id)
     team = get_team_or_404(db, team_id)
+    club = get_or_create_club(db, payload.club_name)
 
-    team.name = payload.name.strip()
-    db.commit()
+    team.club_id = club.id
+    team.name = payload.team_name.strip()
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Team already exists for this club",
+        ) from exc
+
     db.refresh(team)
-    return TeamResponse.model_validate(team)
+    return build_team_response(team, club.name)
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -226,5 +269,3 @@ def delete_team_member(
     db.delete(membership)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
