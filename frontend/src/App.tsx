@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import "./index.css";
 import {
   addTeamMember,
+  assignAdminTeamOwner,
+  createAdminClub,
+  createAdminTeam,
+  deleteAdminClub,
+  deleteAdminTeam,
   createPlayer,
   createTeam,
   deletePlayer,
   deleteTeam,
   deleteTeamMember,
+  getAdminOverview,
   getMe,
   listPlayers,
   listTeamMembers,
@@ -16,25 +22,40 @@ import {
   login,
   logout,
   register,
+  updateAdminTeam,
+  updateAdminClub,
   updateTeamMember,
 } from "./api";
-import type { Player, Team, TeamMember, TeamRole, User } from "./types/auth";
+import type { AdminOverview, Player, Team, TeamMember, TeamRole, User } from "./types/auth";
 
 type AuthMode = "login" | "register";
-type Section = "dashboard" | "teams" | "players" | "members";
+type Section = "dashboard" | "teams" | "players" | "members" | "admin";
+type AdminSection = "home" | "clubs" | "teams" | "users";
 
 const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"];
-const NAV_ITEMS: Array<{ id: Section; label: string; shortLabel: string }> = [
+const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
   { id: "dashboard", label: "Dashboard", shortLabel: "D" },
   { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "players", label: "Players", shortLabel: "P" },
   { id: "members", label: "Members", shortLabel: "M" },
+];
+const ADMIN_NAV_ITEM: { id: Section; label: string; shortLabel: string } = {
+  id: "admin",
+  label: "Super Admin",
+  shortLabel: "A",
+};
+const ADMIN_SUB_NAV_ITEMS: Array<{ id: AdminSection; label: string }> = [
+  { id: "home", label: "Overview" },
+  { id: "clubs", label: "Clubs" },
+  { id: "teams", label: "Teams" },
+  { id: "users", label: "Users" },
 ];
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<AuthMode>("login");
   const [section, setSection] = useState<Section>("dashboard");
+  const [adminSection, setAdminSection] = useState<AdminSection>("home");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [email, setEmail] = useState("");
@@ -43,6 +64,7 @@ function App() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
 
   const [clubName, setClubName] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -55,6 +77,17 @@ function App() {
 
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>("data_enterer");
+  const [adminClubName, setAdminClubName] = useState("");
+  const [adminEditingClubId, setAdminEditingClubId] = useState("");
+  const [adminEditingClubName, setAdminEditingClubName] = useState("");
+  const [adminAssignTeamId, setAdminAssignTeamId] = useState("");
+  const [adminAssignEmail, setAdminAssignEmail] = useState("");
+  const [adminCreateTeamClubId, setAdminCreateTeamClubId] = useState("");
+  const [adminCreateTeamName, setAdminCreateTeamName] = useState("");
+  const [showUnclaimedOnly, setShowUnclaimedOnly] = useState(false);
+  const [adminEditingTeamId, setAdminEditingTeamId] = useState("");
+  const [adminEditingTeamName, setAdminEditingTeamName] = useState("");
+  const [adminEditingTeamClubId, setAdminEditingTeamClubId] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [membersLoadError, setMembersLoadError] = useState<string | null>(null);
@@ -62,6 +95,14 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
   const [isMembersLoading, setIsMembersLoading] = useState(false);
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const adminAssignEmailInputRef = useRef<HTMLInputElement | null>(null);
+
+  const navItems = useMemo(
+    () => (isSuperAdmin ? [...BASE_NAV_ITEMS, ADMIN_NAV_ITEM] : BASE_NAV_ITEMS),
+    [isSuperAdmin],
+  );
 
   const selectedTeamForPlayersName = useMemo(
     () => teams.find((team) => team.id === selectedTeamForPlayers)?.display_name ?? "",
@@ -84,6 +125,15 @@ function App() {
     () => ({ teams: teams.length, players: players.length, members: teamMembers.length }),
     [players.length, teamMembers.length, teams.length],
   );
+  const filteredAdminTeams = useMemo(() => {
+    if (!adminOverview) {
+      return [];
+    }
+    if (!showUnclaimedOnly) {
+      return adminOverview.teams;
+    }
+    return adminOverview.teams.filter((team) => team.owners.length === 0);
+  }, [adminOverview, showUnclaimedOnly]);
 
   const loadWorkspaceData = useCallback(async () => {
     setIsWorkspaceLoading(true);
@@ -122,12 +172,32 @@ function App() {
     }
   }, []);
 
+  const loadAdminData = useCallback(async () => {
+    setIsAdminLoading(true);
+    try {
+      const overview = await getAdminOverview();
+      setAdminOverview(overview);
+      setIsSuperAdmin(true);
+      setAdminAssignTeamId((current) => current || overview.teams[0]?.id || "");
+      setAdminCreateTeamClubId((current) => current || overview.clubs[0]?.id || "");
+    } catch {
+      setAdminOverview(null);
+      setIsSuperAdmin(false);
+      if (section === "admin") {
+        setSection("dashboard");
+      }
+    } finally {
+      setIsAdminLoading(false);
+    }
+  }, [section]);
+
   useEffect(() => {
     const bootstrap = async () => {
       try {
         const me = await getMe();
         setUser(me);
         await loadWorkspaceData();
+        await loadAdminData();
       } catch {
         setUser(null);
       } finally {
@@ -136,7 +206,7 @@ function App() {
     };
 
     void bootstrap();
-  }, [loadWorkspaceData]);
+  }, [loadAdminData, loadWorkspaceData]);
 
   useEffect(() => {
     if (!user) {
@@ -200,6 +270,9 @@ function App() {
       setTeams([]);
       setPlayers([]);
       setTeamMembers([]);
+      setAdminOverview(null);
+      setIsSuperAdmin(false);
+      setAdminSection("home");
       setSection("dashboard");
     } catch (requestError) {
       if (requestError instanceof Error) {
@@ -388,6 +461,194 @@ function App() {
     }
   };
 
+  const handleCreateAdminClub = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      await createAdminClub(adminClubName.trim());
+      setAdminClubName("");
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to create club");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAssignTeamAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!adminAssignTeamId) {
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      await assignAdminTeamOwner(adminAssignTeamId, adminAssignEmail.trim().toLowerCase());
+      setAdminAssignEmail("");
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to assign team admin");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const focusAssignTeamAdmin = (teamId: string) => {
+    setAdminAssignTeamId(teamId);
+    window.setTimeout(() => {
+      adminAssignEmailInputRef.current?.focus();
+      adminAssignEmailInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
+  };
+
+  const handleCreateAdminTeam = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!adminCreateTeamClubId) {
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await createAdminTeam({
+        club_id: adminCreateTeamClubId,
+        team_name: adminCreateTeamName.trim(),
+      });
+      setAdminCreateTeamName("");
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to create team");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const startAdminClubEdit = (clubId: string, currentName: string) => {
+    setAdminEditingClubId(clubId);
+    setAdminEditingClubName(currentName);
+  };
+
+  const cancelAdminClubEdit = () => {
+    setAdminEditingClubId("");
+    setAdminEditingClubName("");
+  };
+
+  const saveAdminClubEdit = async (clubId: string) => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await updateAdminClub(clubId, adminEditingClubName.trim());
+      cancelAdminClubEdit();
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to update club");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAdminClubDelete = async (clubId: string, name: string) => {
+    if (!window.confirm(`Delete club '${name}'?`)) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await deleteAdminClub(clubId);
+      if (adminEditingClubId === clubId) {
+        cancelAdminClubEdit();
+      }
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to delete club");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const startAdminTeamEdit = (teamId: string, clubId: string, currentTeamName: string) => {
+    setAdminEditingTeamId(teamId);
+    setAdminEditingTeamClubId(clubId);
+    setAdminEditingTeamName(currentTeamName);
+  };
+
+  const cancelAdminTeamEdit = () => {
+    setAdminEditingTeamId("");
+    setAdminEditingTeamClubId("");
+    setAdminEditingTeamName("");
+  };
+
+  const saveAdminTeamEdit = async (teamId: string) => {
+    if (!adminEditingTeamClubId || !adminEditingTeamName.trim()) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await updateAdminTeam(teamId, {
+        club_id: adminEditingTeamClubId,
+        team_name: adminEditingTeamName.trim(),
+      });
+      cancelAdminTeamEdit();
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to update team");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAdminTeamDelete = async (teamId: string, teamLabel: string) => {
+    if (!window.confirm(`Delete team '${teamLabel}'?`)) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await deleteAdminTeam(teamId);
+      if (adminEditingTeamId === teamId) {
+        cancelAdminTeamEdit();
+      }
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to delete team");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <main className="auth-shell">
@@ -471,7 +732,7 @@ function App() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <button
               className={`nav-item ${section === item.id ? "active" : ""}`}
               key={item.id}
@@ -725,10 +986,313 @@ function App() {
             </div>
           </section>
         ) : null}
+
+        {section === "admin" ? (
+          <section className="section-card">
+            <div className="admin-subnav">
+              {ADMIN_SUB_NAV_ITEMS.map((item) => (
+                <button
+                  className={`admin-subnav-item ${adminSection === item.id ? "active" : ""}`}
+                  key={item.id}
+                  onClick={() => setAdminSection(item.id)}
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {isAdminLoading ? <p className="muted">Loading overview...</p> : null}
+            {!isAdminLoading && !adminOverview ? (
+              <p className="muted">Unable to load admin overview.</p>
+            ) : null}
+            {adminOverview && adminSection === "home" ? (
+              <div className="stack-form">
+                <div>
+                  <h3>Platform Snapshot</h3>
+                  <p className="muted">Users: {adminOverview.users.length}</p>
+                  <p className="muted">Clubs: {adminOverview.clubs.length}</p>
+                  <p className="muted">Teams: {adminOverview.teams.length}</p>
+                  <p className="muted">
+                    Unclaimed teams: {adminOverview.teams.filter((team) => team.owners.length === 0).length}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {adminOverview && adminSection === "clubs" ? (
+              <div className="stack-form">
+                <div>
+                  <h3>Create Club</h3>
+                  <form className="stack-form" onSubmit={handleCreateAdminClub}>
+                    <input
+                      placeholder="Club name"
+                      value={adminClubName}
+                      onChange={(event) => setAdminClubName(event.target.value)}
+                      required
+                    />
+                    <button className="button primary" disabled={isSubmitting} type="submit">
+                      Create Club
+                    </button>
+                  </form>
+                </div>
+                <div>
+                  <h3>Clubs</h3>
+                  {adminOverview.clubs.length === 0 ? <p className="muted">No clubs.</p> : null}
+                  {adminOverview.clubs.map((club) => (
+                    <div className="list-row" key={club.id}>
+                      {adminEditingClubId === club.id ? (
+                        <input
+                          value={adminEditingClubName}
+                          onChange={(event) => setAdminEditingClubName(event.target.value)}
+                        />
+                      ) : (
+                        <span>{club.name}</span>
+                      )}
+                      <div className="member-actions">
+                        {adminEditingClubId === club.id ? (
+                          <>
+                            <button
+                              className="button primary"
+                              type="button"
+                              disabled={isSubmitting || !adminEditingClubName.trim()}
+                              onClick={() => saveAdminClubEdit(club.id)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={cancelAdminClubEdit}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => startAdminClubEdit(club.id, club.name)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => handleAdminClubDelete(club.id, club.name)}
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {adminOverview && adminSection === "teams" ? (
+              <div className="stack-form">
+                <div>
+                  <h3>Create Team</h3>
+                  <form className="stack-form" onSubmit={handleCreateAdminTeam}>
+                    <select
+                      value={adminCreateTeamClubId}
+                      onChange={(event) => setAdminCreateTeamClubId(event.target.value)}
+                      required
+                    >
+                      <option value="" disabled>
+                        Select club
+                      </option>
+                      {adminOverview.clubs.map((club) => (
+                        <option key={club.id} value={club.id}>
+                          {club.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      placeholder="Team name"
+                      value={adminCreateTeamName}
+                      onChange={(event) => setAdminCreateTeamName(event.target.value)}
+                      required
+                    />
+                    <button
+                      className="button primary"
+                      disabled={isSubmitting || !adminCreateTeamClubId || !adminCreateTeamName.trim()}
+                      type="submit"
+                    >
+                      Create Team
+                    </button>
+                  </form>
+                </div>
+                <div>
+                  <h3>Assign Team Admin</h3>
+                  <form className="stack-form" onSubmit={handleAssignTeamAdmin}>
+                    <select
+                      value={adminAssignTeamId}
+                      onChange={(event) => setAdminAssignTeamId(event.target.value)}
+                      required
+                    >
+                      <option value="" disabled>
+                        Select team
+                      </option>
+                      {adminOverview.teams.map((adminTeam) => (
+                        <option key={adminTeam.id} value={adminTeam.id}>
+                          {adminTeam.club_name} {adminTeam.team_name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      placeholder="admin@email.com"
+                      type="email"
+                      value={adminAssignEmail}
+                      onChange={(event) => setAdminAssignEmail(event.target.value)}
+                      ref={adminAssignEmailInputRef}
+                      required
+                    />
+                    <button
+                      className="button primary"
+                      disabled={isSubmitting || !adminAssignTeamId}
+                      type="submit"
+                    >
+                      Assign Team Admin
+                    </button>
+                  </form>
+                </div>
+                <div className="member-actions">
+                  <label className="muted" htmlFor="unclaimed-filter">
+                    Unclaimed only
+                  </label>
+                  <input
+                    id="unclaimed-filter"
+                    type="checkbox"
+                    checked={showUnclaimedOnly}
+                    onChange={(event) => setShowUnclaimedOnly(event.target.checked)}
+                  />
+                </div>
+                <div>
+                  <h3>Teams ({filteredAdminTeams.length})</h3>
+                  {filteredAdminTeams.length === 0 ? <p className="muted">No teams.</p> : null}
+                  {filteredAdminTeams.map((adminTeam) => (
+                    <div className="list-row" key={adminTeam.id}>
+                      <div>
+                        {adminEditingTeamId === adminTeam.id ? (
+                          <div className="member-actions">
+                            <select
+                              value={adminEditingTeamClubId}
+                              onChange={(event) => setAdminEditingTeamClubId(event.target.value)}
+                            >
+                              {adminOverview.clubs.map((club) => (
+                                <option key={club.id} value={club.id}>
+                                  {club.name}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={adminEditingTeamName}
+                              onChange={(event) => setAdminEditingTeamName(event.target.value)}
+                              placeholder="Team name"
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <span>
+                              {adminTeam.club_name} {adminTeam.team_name}
+                            </span>
+                            <p className="muted">
+                              {adminTeam.owners.length > 0
+                                ? adminTeam.owners.map((owner) => owner.user_email).join(", ")
+                                : "Unclaimed"}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <div className="member-actions">
+                        {adminEditingTeamId === adminTeam.id ? (
+                          <>
+                            <button
+                              className="button primary"
+                              type="button"
+                              disabled={isSubmitting || !adminEditingTeamName.trim() || !adminEditingTeamClubId}
+                              onClick={() => saveAdminTeamEdit(adminTeam.id)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={cancelAdminTeamEdit}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => focusAssignTeamAdmin(adminTeam.id)}
+                            >
+                              Add Admin
+                            </button>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() =>
+                                startAdminTeamEdit(adminTeam.id, adminTeam.club_id, adminTeam.team_name)
+                              }
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() =>
+                                handleAdminTeamDelete(
+                                  adminTeam.id,
+                                  `${adminTeam.club_name} ${adminTeam.team_name}`,
+                                )
+                              }
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {adminOverview && adminSection === "users" ? (
+              <div className="stack-form">
+                <div>
+                  <h3>Users ({adminOverview.users.length})</h3>
+                  {adminOverview.users.length === 0 ? <p className="muted">No users.</p> : null}
+                  {adminOverview.users.map((adminUser) => (
+                    <div className="list-row" key={adminUser.id}>
+                      <span>{adminUser.email}</span>
+                      <span className="muted">
+                        {adminUser.global_roles.length > 0
+                          ? adminUser.global_roles.join(", ")
+                          : "No global roles"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </section>
     </main>
   );
 }
 
 export default App;
-

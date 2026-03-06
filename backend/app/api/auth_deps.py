@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.config import settings
+from app.models.global_role import GlobalRole, GlobalRoleType
 from app.models.session import Session as UserSession
 from app.models.user import User
 
@@ -35,4 +36,26 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    return user
+
+
+def is_super_admin(db: Session, user_id: str) -> bool:
+    role = db.scalar(
+        select(GlobalRole).where(
+            GlobalRole.user_id == user_id,
+            GlobalRole.role == GlobalRoleType.SUPER_ADMIN.value,
+        )
+    )
+    return role is not None
+
+
+def require_super_admin(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if not is_super_admin(db, user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin access required",
+        )
     return user

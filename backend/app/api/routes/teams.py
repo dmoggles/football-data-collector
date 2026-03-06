@@ -10,6 +10,7 @@ from app.api.entitlements import (
     ensure_team_admin,
     get_team_or_404,
     require_team_admin,
+    set_membership_role,
 )
 from app.models.club import Club
 from app.models.player import Player
@@ -54,15 +55,14 @@ def build_team_response(team: Team, club_name: str) -> TeamResponse:
     )
 
 
-def get_or_create_club(db: Session, club_name: str) -> Club:
+def get_club_by_name_or_404(db: Session, club_name: str) -> Club:
     normalized_name = club_name.strip()
     club = db.scalar(select(Club).where(Club.name == normalized_name))
-    if club:
-        return club
-
-    club = Club(name=normalized_name)
-    db.add(club)
-    db.flush()
+    if not club:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Club not found. Ask a super admin to create it first.",
+        )
     return club
 
 
@@ -88,12 +88,12 @@ def create_team(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TeamResponse:
-    club = get_or_create_club(db, payload.club_name)
+    club = get_club_by_name_or_404(db, payload.club_name)
     team = Team(name=payload.team_name.strip(), club_id=club.id)
     db.add(team)
     db.flush()
 
-    membership = TeamMembership(team_id=team.id, user_id=user.id, role=TeamRole.ADMIN.value)
+    membership = TeamMembership(team_id=team.id, user_id=user.id, role=TeamRole.TEAM_ADMIN.value)
     db.add(membership)
 
     try:
@@ -118,7 +118,7 @@ def update_team(
 ) -> TeamResponse:
     ensure_team_admin(db, team_id, user.id)
     team = get_team_or_404(db, team_id)
-    club = get_or_create_club(db, payload.club_name)
+    club = get_club_by_name_or_404(db, payload.club_name)
 
     team.club_id = club.id
     team.name = payload.team_name.strip()
@@ -183,6 +183,7 @@ def add_team_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     membership = TeamMembership(team_id=team_id, user_id=target_user.id, role=payload.role.value)
+    set_membership_role(membership, payload.role)
     db.add(membership)
 
     try:
@@ -215,8 +216,8 @@ def update_team_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
 
     if (
-        membership.role == TeamRole.ADMIN.value
-        and payload.role.value != TeamRole.ADMIN.value
+        membership.role in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value]
+        and payload.role.value not in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value]
         and count_team_admins(db, team_id) <= 1
     ):
         raise HTTPException(
@@ -226,14 +227,14 @@ def update_team_member(
 
     if (
         membership.user_id == acting_membership.user_id
-        and payload.role.value != TeamRole.ADMIN.value
+        and payload.role.value not in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value]
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot demote yourself",
         )
 
-    membership.role = payload.role.value
+    set_membership_role(membership, payload.role)
     db.commit()
     db.refresh(membership)
     return build_team_member_response(db, membership)
@@ -254,7 +255,9 @@ def delete_team_member(
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
 
-    if membership.role == TeamRole.ADMIN.value and count_team_admins(db, team_id) <= 1:
+    if membership.role in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value] and count_team_admins(
+        db, team_id
+    ) <= 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Team must have at least one admin",

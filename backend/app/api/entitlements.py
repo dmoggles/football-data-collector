@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from app.api.auth_deps import get_current_user
 from app.api.deps import get_db
 from app.models.team import Team
-from app.models.team_membership import TeamMembership, TeamRole
+from app.models.team_membership import (
+    TeamMembership,
+    TeamRole,
+    is_team_admin_role,
+    normalize_team_role,
+)
 from app.models.user import User
 
 
@@ -34,7 +39,7 @@ def ensure_team_member(db: Session, team_id: str, user_id: str) -> TeamMembershi
 
 def ensure_team_admin(db: Session, team_id: str, user_id: str) -> TeamMembership:
     membership = ensure_team_member(db, team_id, user_id)
-    if membership.role != TeamRole.ADMIN.value:
+    if not is_team_admin_role(membership.role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return membership
 
@@ -56,12 +61,13 @@ def require_team_admin(
 
 
 def count_team_admins(db: Session, team_id: str) -> int:
-    query = (
-        select(func.count())
-        .select_from(TeamMembership)
-        .where(
-            TeamMembership.team_id == team_id,
-            TeamMembership.role == TeamRole.ADMIN.value,
-        )
+    roles = [TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
+    query = select(func.count()).select_from(TeamMembership).where(
+        TeamMembership.team_id == team_id,
+        TeamMembership.role.in_(roles),
     )
     return int(db.scalar(query) or 0)
+
+
+def set_membership_role(membership: TeamMembership, role: TeamRole) -> None:
+    membership.role = normalize_team_role(role.value)

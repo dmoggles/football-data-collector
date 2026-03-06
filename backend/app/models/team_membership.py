@@ -9,8 +9,11 @@ from app.db.base import Base
 
 
 class TeamRole(StrEnum):
+    TEAM_ADMIN = "team_admin"
     ADMIN = "admin"
     DATA_ENTERER = "data_enterer"
+    COACH = "coach"
+    PARENT = "parent"
 
 
 class TeamMembership(Base):
@@ -43,3 +46,11 @@ class TeamMembership(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+def normalize_team_role(role: str) -> str:
+    return TeamRole.TEAM_ADMIN.value if role == TeamRole.ADMIN.value else role
+
+
+def is_team_admin_role(role: str) -> bool:
+    return normalize_team_role(role) == TeamRole.TEAM_ADMIN.value

@@ -1,8 +1,12 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.db.session import SessionLocal
 from app.main import app
+from app.models.global_role import GlobalRole, GlobalRoleType
+from app.models.user import User
 
 client = TestClient(app)
 
@@ -19,13 +23,41 @@ def _login(email: str, password: str) -> None:
     assert login_response.status_code == 200
 
 
+def _grant_super_admin(email: str) -> None:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+
+        role = db.scalar(
+            select(GlobalRole).where(
+                GlobalRole.user_id == user.id,
+                GlobalRole.role == GlobalRoleType.SUPER_ADMIN.value,
+            )
+        )
+        if role is None:
+            db.add(GlobalRole(user_id=user.id, role=GlobalRoleType.SUPER_ADMIN.value))
+            db.commit()
+
+
+def _create_club_as_super_admin(club_name: str) -> None:
+    admin_email, admin_password = _register("super")
+    _grant_super_admin(admin_email)
+    _login(admin_email, admin_password)
+
+    create_club_response = client.post("/admin/clubs", json={"name": club_name})
+    assert create_club_response.status_code in [201, 409]
+
+
 def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
+    club_name = f"Arrows-{uuid.uuid4().hex[:6]}"
+    team_name = f"FC-{uuid.uuid4().hex[:4]}"
+    _create_club_as_super_admin(club_name)
     owner_email, owner_password = _register("owner")
     _login(owner_email, owner_password)
 
     create_team_response = client.post(
         "/teams",
-        json={"club_name": "Arrows", "team_name": "FC"},
+        json={"club_name": club_name, "team_name": team_name},
     )
     assert create_team_response.status_code == 201
     team_id = create_team_response.json()["id"]
@@ -33,7 +65,7 @@ def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
     members_response = client.get(f"/teams/{team_id}/members")
     assert members_response.status_code == 200
     assert len(members_response.json()) == 1
-    assert members_response.json()[0]["role"] == "admin"
+    assert members_response.json()[0]["role"] == "team_admin"
 
     create_player_response = client.post(
         "/players",
@@ -48,12 +80,15 @@ def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
 
 
 def test_data_enterer_cannot_modify_team_or_players() -> None:
+    club_name = f"Rangers-{uuid.uuid4().hex[:6]}"
+    team_name = f"FirstXI-{uuid.uuid4().hex[:4]}"
+    _create_club_as_super_admin(club_name)
     owner_email, owner_password = _register("owner2")
     _login(owner_email, owner_password)
 
     create_team_response = client.post(
         "/teams",
-        json={"club_name": "Rangers", "team_name": "First XI"},
+        json={"club_name": club_name, "team_name": team_name},
     )
     assert create_team_response.status_code == 201
     team_id = create_team_response.json()["id"]

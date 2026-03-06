@@ -1,4 +1,5 @@
 import type {
+  AdminOverview,
   AddTeamMemberPayload,
   AuthPayload,
   Player,
@@ -135,4 +136,47 @@ export async function updateTeamMember(
 
 export async function deleteTeamMember(teamId: string, membershipId: string): Promise<void> {
   await request<void>(`/teams/${teamId}/members/${membershipId}`, "DELETE");
+}
+
+export async function getAdminOverview(): Promise<AdminOverview> {
+  return request<AdminOverview>("/admin/overview", "GET");
+}
+
+export async function createAdminClub(name: string): Promise<{ id: string; name: string }> {
+  return request<{ id: string; name: string }>("/admin/clubs", "POST", { name });
+}
+
+export async function updateAdminClub(clubId: string, name: string): Promise<{ id: string; name: string }> {
+  return request<{ id: string; name: string }>(`/admin/clubs/${clubId}`, "PATCH", { name });
+}
+
+export async function deleteAdminClub(clubId: string): Promise<void> {
+  await request<void>(`/admin/clubs/${clubId}`, "DELETE");
+}
+
+export async function assignAdminTeamOwner(
+  teamId: string,
+  userEmail: string,
+): Promise<TeamMember> {
+  return request<TeamMember>(`/admin/teams/${teamId}/assign-team-admin`, "POST", {
+    user_email: userEmail,
+  });
+}
+
+export async function createAdminTeam(payload: {
+  club_id: string;
+  team_name: string;
+}): Promise<{ id: string; club_id: string; team_name: string }> {
+  return request<{ id: string; club_id: string; team_name: string }>("/admin/teams", "POST", payload);
+}
+
+export async function updateAdminTeam(
+  teamId: string,
+  payload: { club_id: string; team_name: string },
+): Promise<{ id: string; club_id: string; team_name: string }> {
+  return request<{ id: string; club_id: string; team_name: string }>(`/admin/teams/${teamId}`, "PATCH", payload);
+}
+
+export async function deleteAdminTeam(teamId: string): Promise<void> {
+  await request<void>(`/admin/teams/${teamId}`, "DELETE");
 }
