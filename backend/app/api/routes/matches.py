@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session, aliased
 
@@ -61,8 +61,33 @@ def ensure_fixture_view_access(db: Session, match: Match, user_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
+def list_user_admin_team_ids(db: Session, user_id: str) -> set[str]:
+    rows = db.execute(
+        select(TeamMembership.team_id, TeamMembership.role).where(TeamMembership.user_id == user_id)
+    ).all()
+    return {team_id for team_id, role in rows if is_team_admin_role(role)}
+
+
+def ensure_fixture_manage_access(db: Session, match: Match, user_id: str) -> None:
+    home_role = db.scalar(
+        select(TeamMembership.role).where(
+            TeamMembership.user_id == user_id,
+            TeamMembership.team_id == match.home_team_id,
+        )
+    )
+    away_role = db.scalar(
+        select(TeamMembership.role).where(
+            TeamMembership.user_id == user_id,
+            TeamMembership.team_id == match.away_team_id,
+        )
+    )
+    if not bool((home_role and is_team_admin_role(home_role)) or (away_role and is_team_admin_role(away_role))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team admin access required")
+
+
 @router.get("", response_model=list[MatchResponse])
 def list_matches(
+    team_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[MatchResponse]:
@@ -70,7 +95,6 @@ def list_matches(
     away_team = aliased(Team)
     home_club = aliased(Club)
     away_club = aliased(Club)
-    home_membership = aliased(TeamMembership)
     match_visibility = aliased(TeamMembership)
 
     query = (
@@ -80,20 +104,26 @@ def list_matches(
             home_club.name,
             away_team.name,
             away_club.name,
-            home_membership.role,
         )
         .join(home_team, home_team.id == Match.home_team_id)
         .join(home_club, home_club.id == home_team.club_id)
         .join(away_team, away_team.id == Match.away_team_id)
         .join(away_club, away_club.id == away_team.club_id)
-        .outerjoin(
-            home_membership,
-            and_(
-                home_membership.user_id == user.id,
-                home_membership.team_id == Match.home_team_id,
-            ),
+        # MySQL doesn't support "NULLS LAST"; emulate it by sorting null kickoff rows last.
+        .order_by(Match.kickoff_at.is_(None), Match.kickoff_at.asc(), Match.created_at.desc())
+    )
+    if team_id:
+        membership_role = db.scalar(
+            select(TeamMembership.role).where(
+                TeamMembership.user_id == user.id,
+                TeamMembership.team_id == team_id,
+            )
         )
-        .where(
+        if not membership_role:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        query = query.where(or_(Match.home_team_id == team_id, Match.away_team_id == team_id))
+    else:
+        query = query.where(
             exists(
                 select(1).where(
                     and_(
@@ -106,9 +136,8 @@ def list_matches(
                 )
             )
         )
-        # MySQL doesn't support "NULLS LAST"; emulate it by sorting null kickoff rows last.
-        .order_by(Match.kickoff_at.is_(None), Match.kickoff_at.asc(), Match.created_at.desc())
-    )
+
+    admin_team_ids = list_user_admin_team_ids(db, user.id)
     rows = db.execute(query).all()
     return [
         build_match_response(
@@ -117,9 +146,9 @@ def list_matches(
             home_club_name=home_club_name,
             away_team_name=away_team_name,
             away_club_name=away_club_name,
-            can_manage=bool(home_role and is_team_admin_role(home_role)),
+            can_manage=match.home_team_id in admin_team_ids or match.away_team_id in admin_team_ids,
         )
-        for match, home_team_name, home_club_name, away_team_name, away_club_name, home_role in rows
+        for match, home_team_name, home_club_name, away_team_name, away_club_name in rows
     ]
 
 
@@ -177,9 +206,8 @@ def update_match(
         )
 
     fixture = get_match_or_404(db, match_id)
-    ensure_team_admin(db, fixture.home_team_id, user.id)
-    if payload.home_team_id != fixture.home_team_id:
-        ensure_team_admin(db, payload.home_team_id, user.id)
+    ensure_fixture_manage_access(db, fixture, user.id)
+    ensure_team_admin(db, payload.home_team_id, user.id)
 
     home_team_record = get_team_or_404(db, payload.home_team_id)
     away_team_record = get_team_or_404(db, payload.away_team_id)
@@ -210,7 +238,7 @@ def delete_match(
     user: User = Depends(get_current_user),
 ) -> Response:
     fixture = get_match_or_404(db, match_id)
-    ensure_team_admin(db, fixture.home_team_id, user.id)
+    ensure_fixture_manage_access(db, fixture, user.id)
     db.delete(fixture)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -18,6 +18,7 @@ from app.models.team import Team
 from app.models.team_membership import TeamMembership, TeamRole
 from app.models.user import User
 from app.schemas.team import (
+    TeamDirectoryResponse,
     TeamCreateRequest,
     TeamMemberCreateRequest,
     TeamMemberResponse,
@@ -56,6 +57,15 @@ def build_team_response(team: Team, club_name: str, my_role: str) -> TeamRespons
     )
 
 
+def build_team_directory_response(team: Team, club_name: str) -> TeamDirectoryResponse:
+    return TeamDirectoryResponse(
+        id=team.id,
+        club_id=team.club_id,
+        club_name=club_name,
+        team_name=team.name,
+    )
+
+
 def get_club_by_name_or_404(db: Session, club_name: str) -> Club:
     normalized_name = club_name.strip()
     club = db.scalar(select(Club).where(Club.name == normalized_name))
@@ -81,6 +91,20 @@ def list_teams(
     )
     rows = db.execute(query).all()
     return [build_team_response(team, club_name, role) for team, club_name, role in rows]
+
+
+@router.get("/directory", response_model=list[TeamDirectoryResponse])
+def list_team_directory(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[TeamDirectoryResponse]:
+    query = (
+        select(Team, Club.name)
+        .join(Club, Club.id == Team.club_id)
+        .order_by(Club.name.asc(), Team.name.asc())
+    )
+    rows = db.execute(query).all()
+    return [build_team_directory_response(team, club_name) for team, club_name in rows]
 
 
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)

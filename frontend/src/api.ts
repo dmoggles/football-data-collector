@@ -3,10 +3,13 @@ import type {
   AdminOverview,
   AddTeamMemberPayload,
   AuthPayload,
+  Fixture,
+  FixturePayload,
   GlobalRole,
   Player,
   PlayerPayload,
   Team,
+  TeamDirectory,
   TeamMember,
   TeamPayload,
   UpdateTeamMemberPayload,
@@ -17,6 +20,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 type TeamApiResponse = Omit<Team, "display_name">;
+type TeamDirectoryApiResponse = Omit<TeamDirectory, "display_name">;
 
 class ApiError extends Error {
   status: number;
@@ -67,7 +71,11 @@ async function request<TResponse>(
     return undefined as TResponse;
   }
 
-  return (await response.json()) as TResponse;
+  try {
+    return (await response.json()) as TResponse;
+  } catch {
+    throw new ApiError("Server returned an unexpected response format", response.status);
+  }
 }
 
 function toTeam(team: TeamApiResponse): Team {
@@ -105,6 +113,14 @@ export async function listTeams(): Promise<Team[]> {
   return teams.map(toTeam);
 }
 
+export async function listTeamDirectory(): Promise<TeamDirectory[]> {
+  const teams = await request<TeamDirectoryApiResponse[]>("/teams/directory", "GET");
+  return teams.map((team) => ({
+    ...team,
+    display_name: `${team.club_name} ${team.team_name}`,
+  }));
+}
+
 export async function createTeam(payload: TeamPayload): Promise<Team> {
   const team = await request<TeamApiResponse>("/teams", "POST", payload);
   return toTeam(team);
@@ -125,6 +141,23 @@ export async function createPlayer(payload: PlayerPayload): Promise<Player> {
 
 export async function deletePlayer(playerId: string): Promise<void> {
   await request<void>(`/players/${playerId}`, "DELETE");
+}
+
+export async function listFixtures(teamId: string): Promise<Fixture[]> {
+  const params = `?team_id=${encodeURIComponent(teamId)}`;
+  return request<Fixture[]>(`/matches${params}`, "GET");
+}
+
+export async function createFixture(payload: FixturePayload): Promise<Fixture> {
+  return request<Fixture>("/matches", "POST", payload);
+}
+
+export async function updateFixture(fixtureId: string, payload: FixturePayload): Promise<Fixture> {
+  return request<Fixture>(`/matches/${fixtureId}`, "PATCH", payload);
+}
+
+export async function deleteFixture(fixtureId: string): Promise<void> {
+  await request<void>(`/matches/${fixtureId}`, "DELETE");
 }
 
 export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {

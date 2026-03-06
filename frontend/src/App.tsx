@@ -7,10 +7,12 @@ import {
   assignAdminTeamOwner,
   assignUserGlobalRole,
   changePassword,
+  createFixture,
   createAdminClub,
   createAdminTeam,
   deleteAdminClub,
   deleteAdminTeam,
+  deleteFixture,
   createPlayer,
   createTeam,
   deletePlayer,
@@ -19,7 +21,9 @@ import {
   getAdminOverview,
   getAdminAuditLogs,
   getMe,
+  listFixtures,
   listPlayers,
+  listTeamDirectory,
   listTeamMembers,
   listTeams,
   login,
@@ -27,23 +31,52 @@ import {
   removeAdminTeamOwner,
   register,
   revokeUserGlobalRole,
+  updateFixture,
   updateAdminTeam,
   updateAdminClub,
   updateTeamMember,
 } from "./api";
-import type { AdminAuditLogEntry, AdminOverview, Player, Team, TeamMember, TeamRole, User } from "./types/auth";
+import type {
+  AdminAuditLogEntry,
+  AdminOverview,
+  Fixture,
+  MatchFormat,
+  Player,
+  Team,
+  TeamDirectory,
+  TeamMember,
+  TeamRole,
+  User,
+} from "./types/auth";
 
 type AuthMode = "login" | "register";
-type Section = "dashboard" | "teams" | "players" | "members" | "admin";
+type Section = "dashboard" | "fixtures" | "teams" | "players" | "members" | "admin";
 type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
 
 const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"];
 const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
   { id: "dashboard", label: "Dashboard", shortLabel: "D" },
+  { id: "fixtures", label: "Fixtures", shortLabel: "F" },
   { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "players", label: "Players", shortLabel: "P" },
   { id: "members", label: "Members", shortLabel: "M" },
 ];
+const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
+  { value: "5_aside", label: "5 aside" },
+  { value: "7_aside", label: "7 aside" },
+  { value: "9_aside", label: "9 aside" },
+  { value: "11_aside", label: "11 aside" },
+];
+const FIXTURE_STATUS_OPTIONS = [
+  { value: "scheduled", label: "Scheduled" },
+  { value: "final", label: "Final" },
+  { value: "cancelled", label: "Cancelled" },
+];
+const TEAM_MEMBER_ROLE_OPTIONS = [
+  { value: "team_admin", label: "Admin" },
+  { value: "data_enterer", label: "Data Enterer" },
+];
+const CALENDAR_WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ADMIN_NAV_ITEM: { id: Section; label: string; shortLabel: string } = {
   id: "admin",
   label: "Super Admin",
@@ -61,6 +94,110 @@ function isTeamAdminRole(role: TeamRole): boolean {
   return role === "team_admin" || role === "admin";
 }
 
+function fixtureStatusClass(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "final") {
+    return "fixture-chip final";
+  }
+  if (normalized === "cancelled") {
+    return "fixture-chip cancelled";
+  }
+  return "fixture-chip scheduled";
+}
+
+function toLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+type SearchableOption = {
+  value: string;
+  label: string;
+};
+
+type SearchableSelectProps = {
+  value: string;
+  options: SearchableOption[];
+  placeholder: string;
+  disabled?: boolean;
+  onChange: (nextValue: string) => void;
+};
+
+function SearchableSelect({
+  value,
+  options,
+  placeholder,
+  disabled = false,
+  onChange,
+}: SearchableSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const selected = options.find((option) => option.value === value);
+    setQuery(selected?.label ?? "");
+  }, [options, value]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = query.trim()
+    ? options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
+  return (
+    <div className={`searchable-select ${disabled ? "disabled" : ""}`} ref={rootRef}>
+      <input
+        value={query}
+        onFocus={() => {
+          if (!disabled) {
+            setIsOpen(true);
+          }
+        }}
+        onChange={(event) => {
+          const nextQuery = event.target.value;
+          setQuery(nextQuery);
+          setIsOpen(true);
+          const exact = options.find((option) => option.label.toLowerCase() === nextQuery.trim().toLowerCase());
+          onChange(exact?.value ?? "");
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+      {isOpen && !disabled ? (
+        <div className="searchable-select-menu">
+          {filteredOptions.length === 0 ? <p className="searchable-select-empty">No matches</p> : null}
+          {filteredOptions.map((option) => (
+            <button
+              className={`searchable-select-option ${option.value === value ? "active" : ""}`}
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setQuery(option.label);
+                setIsOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<AuthMode>("login");
@@ -72,6 +209,8 @@ function App() {
   const [password, setPassword] = useState("");
 
   const [teams, setTeams] = useState<Team[]>([]);
+  const [teamDirectory, setTeamDirectory] = useState<TeamDirectory[]>([]);
+  const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
@@ -82,6 +221,17 @@ function App() {
   const [playerName, setPlayerName] = useState("");
   const [shirtNumber, setShirtNumber] = useState("");
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
+  const [fixtureTeamId, setFixtureTeamId] = useState("");
+  const [fixtureOpponentTeamId, setFixtureOpponentTeamId] = useState("");
+  const [fixtureFormat, setFixtureFormat] = useState<MatchFormat>("11_aside");
+  const [fixtureKickoff, setFixtureKickoff] = useState("");
+  const [fixtureStatus, setFixtureStatus] = useState("scheduled");
+  const [editingFixtureId, setEditingFixtureId] = useState("");
+  const [isFixtureComposerOpen, setIsFixtureComposerOpen] = useState(false);
+  const [fixtureCalendarMonth, setFixtureCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [currentPasswordInput, setCurrentPasswordInput] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
@@ -136,8 +286,8 @@ function App() {
   }, [players, selectedTeamForPlayers]);
 
   const dashboardStats = useMemo(
-    () => ({ teams: teams.length, players: players.length, members: teamMembers.length }),
-    [players.length, teamMembers.length, teams.length],
+    () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
+    [fixtures.length, players.length, teamMembers.length, teams.length],
   );
   const filteredAdminTeams = useMemo(() => {
     if (!adminOverview) {
@@ -173,15 +323,91 @@ function App() {
       ),
     [roleByTeamId, selectedTeamForMembers],
   );
+  const ownedTeams = useMemo(
+    () => teams.filter((team) => team.my_role && isTeamAdminRole(team.my_role)),
+    [teams],
+  );
+  const fixtureOppositionOptions = useMemo(
+    () => teamDirectory.filter((team) => team.id !== fixtureTeamId),
+    [fixtureTeamId, teamDirectory],
+  );
+  const clubNameOptions = useMemo(() => {
+    const uniqueClubNames = Array.from(new Set(teamDirectory.map((team) => team.club_name.trim()).filter(Boolean)));
+    return uniqueClubNames.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name }));
+  }, [teamDirectory]);
+  const selectedFixtureTeamName = useMemo(
+    () => ownedTeams.find((team) => team.id === fixtureTeamId)?.display_name ?? "",
+    [fixtureTeamId, ownedTeams],
+  );
+  const fixturesByDateKey = useMemo(() => {
+    const grouped: Record<string, Fixture[]> = {};
+    for (const fixture of fixtures) {
+      if (!fixture.kickoff_at) {
+        continue;
+      }
+      const key = toLocalDateKey(new Date(fixture.kickoff_at));
+      grouped[key] = grouped[key] ? [...grouped[key], fixture] : [fixture];
+    }
+    return grouped;
+  }, [fixtures]);
+  const calendarCells = useMemo(() => {
+    const year = fixtureCalendarMonth.getFullYear();
+    const month = fixtureCalendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startWeekday = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    const cells: Array<{ date: Date; inCurrentMonth: boolean }> = [];
 
-  const loadWorkspaceData = useCallback(async () => {
+    for (let i = startWeekday - 1; i >= 0; i -= 1) {
+      cells.push({ date: new Date(year, month - 1, daysInPrevMonth - i), inCurrentMonth: false });
+    }
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      cells.push({ date: new Date(year, month, day), inCurrentMonth: true });
+    }
+    while (cells.length % 7 !== 0) {
+      const nextDay = cells.length - (startWeekday + daysInMonth) + 1;
+      cells.push({ date: new Date(year, month + 1, nextDay), inCurrentMonth: false });
+    }
+    return cells;
+  }, [fixtureCalendarMonth]);
+
+  const loadWorkspaceData = useCallback(async (preferredFixtureTeamId = "") => {
     setIsWorkspaceLoading(true);
     try {
-      const [teamsResponse, playersResponse] = await Promise.all([listTeams(), listPlayers()]);
+      const [teamsResponse, playersResponse, teamDirectoryResponse] = await Promise.all([
+        listTeams(),
+        listPlayers(),
+        listTeamDirectory(),
+      ]);
+      const ownedTeamIds = new Set(
+        teamsResponse.filter((team) => team.my_role && isTeamAdminRole(team.my_role)).map((team) => team.id),
+      );
+      const nextFixtureTeamId = ownedTeamIds.has(preferredFixtureTeamId)
+        ? preferredFixtureTeamId
+        : teamsResponse.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id || "";
+      const fixturesResponse = nextFixtureTeamId ? await listFixtures(nextFixtureTeamId) : [];
       setTeams(teamsResponse);
+      setTeamDirectory(teamDirectoryResponse);
+      setFixtures(fixturesResponse);
       setPlayers(playersResponse);
       setSelectedTeamForPlayers((current) => current || teamsResponse[0]?.id || "");
       setSelectedTeamForMembers((current) => current || teamsResponse[0]?.id || "");
+      setFixtureTeamId(nextFixtureTeamId);
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }, []);
+
+  const loadFixturesForTeam = useCallback(async (teamId: string) => {
+    if (!teamId) {
+      setFixtures([]);
+      return;
+    }
+    setIsWorkspaceLoading(true);
+    try {
+      const fixturesResponse = await listFixtures(teamId);
+      setFixtures(fixturesResponse);
     } finally {
       setIsWorkspaceLoading(false);
     }
@@ -266,6 +492,13 @@ function App() {
     void loadTeamMembers(selectedTeamForMembers);
   }, [loadTeamMembers, section, selectedTeamForMembers, selectedTeamForMembersCanManage, user]);
 
+  useEffect(() => {
+    if (!user || !fixtureTeamId) {
+      return;
+    }
+    void loadFixturesForTeam(fixtureTeamId);
+  }, [fixtureTeamId, loadFixturesForTeam, user]);
+
   const authSubmitLabel = useMemo(() => {
     if (isSubmitting) {
       return "Working...";
@@ -316,6 +549,7 @@ function App() {
       setEmail("");
       setPassword("");
       setTeams([]);
+      setFixtures([]);
       setPlayers([]);
       setTeamMembers([]);
       setAdminOverview(null);
@@ -349,8 +583,21 @@ function App() {
       setTeams((existing) =>
         [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)),
       );
+      setTeamDirectory((existing) =>
+        [
+          ...existing,
+          {
+            id: created.id,
+            club_id: created.club_id,
+            club_name: created.club_name,
+            team_name: created.team_name,
+            display_name: created.display_name,
+          },
+        ].sort((a, b) => a.display_name.localeCompare(b.display_name)),
+      );
       setSelectedTeamForPlayers(created.id);
       setSelectedTeamForMembers(created.id);
+      setFixtureTeamId((current) => current || created.id);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -370,6 +617,7 @@ function App() {
       await deleteTeam(teamId);
       const remainingTeams = teams.filter((team) => team.id !== teamId);
       setTeams(remainingTeams);
+      setTeamDirectory((existing) => existing.filter((team) => team.id !== teamId));
       setPlayers((existing) => existing.filter((player) => player.team_id !== teamId));
 
       if (selectedTeamForPlayers === teamId) {
@@ -380,6 +628,12 @@ function App() {
         setSelectedTeamForMembers(next);
         await loadTeamMembers(next);
       }
+      if (fixtureTeamId === teamId) {
+        const nextOwned = remainingTeams.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id ?? "";
+        setFixtureTeamId(nextOwned);
+        setFixtures([]);
+        resetFixtureForm();
+      }
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -389,6 +643,120 @@ function App() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const resetFixtureForm = () => {
+    setEditingFixtureId("");
+    setFixtureFormat("11_aside");
+    setFixtureKickoff("");
+    setFixtureStatus("scheduled");
+    setFixtureOpponentTeamId("");
+    setIsFixtureComposerOpen(false);
+  };
+
+  const openFixtureComposer = (date: Date | null = null) => {
+    setEditingFixtureId("");
+    setFixtureFormat("11_aside");
+    setFixtureStatus("scheduled");
+    setFixtureOpponentTeamId("");
+    if (date) {
+      const local = new Date(date);
+      local.setHours(18, 0, 0, 0);
+      const offset = local.getTimezoneOffset();
+      setFixtureKickoff(new Date(local.getTime() - offset * 60_000).toISOString().slice(0, 16));
+    } else {
+      setFixtureKickoff("");
+    }
+    setIsFixtureComposerOpen(true);
+  };
+
+  const handleCreateOrUpdateFixture = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!fixtureTeamId) {
+      setError("Select one of your teams first");
+      return;
+    }
+    if (!fixtureOpponentTeamId) {
+      setError("Please select a valid opposition team from the list");
+      return;
+    }
+    if (fixtureTeamId === fixtureOpponentTeamId) {
+      setError("Opposition team must be different");
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        home_team_id: fixtureTeamId,
+        away_team_id: fixtureOpponentTeamId,
+        format: fixtureFormat,
+        kickoff_at: fixtureKickoff ? new Date(fixtureKickoff).toISOString() : null,
+        status: editingFixtureId ? fixtureStatus.trim() || "scheduled" : "scheduled",
+      };
+
+      if (editingFixtureId) {
+        await updateFixture(editingFixtureId, payload);
+      } else {
+        await createFixture(payload);
+      }
+      await loadFixturesForTeam(fixtureTeamId);
+      resetFixtureForm();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to save fixture");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteFixture = async (fixtureId: string) => {
+    if (!window.confirm("Delete this fixture?")) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await deleteFixture(fixtureId);
+      if (editingFixtureId === fixtureId) {
+        resetFixtureForm();
+      }
+      await loadFixturesForTeam(fixtureTeamId);
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to delete fixture");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const startFixtureEdit = (fixture: Fixture) => {
+    setEditingFixtureId(fixture.id);
+    const selectedTeamIsHome = fixture.home_team_id === fixtureTeamId;
+    const oppositionTeamId = selectedTeamIsHome ? fixture.away_team_id : fixture.home_team_id;
+    setFixtureOpponentTeamId(oppositionTeamId);
+    setFixtureFormat(fixture.format);
+    setFixtureStatus(
+      FIXTURE_STATUS_OPTIONS.some((option) => option.value === fixture.status.toLowerCase())
+        ? fixture.status.toLowerCase()
+        : "scheduled",
+    );
+    if (fixture.kickoff_at) {
+      const date = new Date(fixture.kickoff_at);
+      const offset = date.getTimezoneOffset();
+      const localDate = new Date(date.getTime() - offset * 60_000);
+      setFixtureKickoff(localDate.toISOString().slice(0, 16));
+    } else {
+      setFixtureKickoff("");
+    }
+    setIsFixtureComposerOpen(true);
   };
 
   const handleCreatePlayer = async (event: FormEvent<HTMLFormElement>) => {
@@ -911,14 +1279,18 @@ function App() {
         {section === "dashboard" ? (
           <section className="section-card">
             <div className="stats-grid">
-              <article>
-                <h3>Teams</h3>
-                <p>{dashboardStats.teams}</p>
-              </article>
-              <article>
-                <h3>Players</h3>
-                <p>{dashboardStats.players}</p>
-              </article>
+            <article>
+              <h3>Teams</h3>
+              <p>{dashboardStats.teams}</p>
+            </article>
+            <article>
+              <h3>Fixtures</h3>
+              <p>{dashboardStats.fixtures}</p>
+            </article>
+            <article>
+              <h3>Players</h3>
+              <p>{dashboardStats.players}</p>
+            </article>
               <article>
                 <h3>Members</h3>
                 <p>{dashboardStats.members}</p>
@@ -960,15 +1332,196 @@ function App() {
           </section>
         ) : null}
 
+        {section === "fixtures" ? (
+          <section className="section-card">
+            <div className="fixture-toolbar">
+              <SearchableSelect
+                value={fixtureTeamId}
+                options={ownedTeams.map((team) => ({ value: team.id, label: team.display_name }))}
+                placeholder="Select your team"
+                onChange={(nextValue) => {
+                  setFixtureTeamId(nextValue);
+                  resetFixtureForm();
+                }}
+              />
+              <div className="fixture-month-controls">
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() =>
+                    setFixtureCalendarMonth(
+                      (current) => new Date(current.getFullYear(), current.getMonth() - 1, 1),
+                    )
+                  }
+                >
+                  Prev
+                </button>
+                <h3>{fixtureCalendarMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h3>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() =>
+                    setFixtureCalendarMonth(
+                      (current) => new Date(current.getFullYear(), current.getMonth() + 1, 1),
+                    )
+                  }
+                >
+                  Next
+                </button>
+              </div>
+              <button
+                className="button primary"
+                type="button"
+                disabled={!fixtureTeamId}
+                onClick={() => openFixtureComposer()}
+              >
+                + Add Fixture
+              </button>
+            </div>
+
+            {!fixtureTeamId ? <p className="muted">Select one of your teams to view fixtures.</p> : null}
+            {fixtureTeamId ? (
+              <>
+                <p className="muted">Showing fixtures for {selectedFixtureTeamName}.</p>
+                <div className="calendar-weekdays">
+                  {CALENDAR_WEEKDAY_LABELS.map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
+                </div>
+                <div className="calendar-grid">
+                  {calendarCells.map(({ date, inCurrentMonth }) => {
+                    const dateKey = toLocalDateKey(date);
+                    const dayFixtures = fixturesByDateKey[dateKey] ?? [];
+                    return (
+                      <div
+                        key={`${dateKey}-${inCurrentMonth ? "in" : "out"}`}
+                        className={`calendar-cell ${inCurrentMonth ? "" : "outside"}`}
+                        onClick={() => inCurrentMonth && openFixtureComposer(date)}
+                        onKeyDown={(event) => {
+                          if (!inCurrentMonth) {
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openFixtureComposer(date);
+                          }
+                        }}
+                        role={inCurrentMonth ? "button" : undefined}
+                        tabIndex={inCurrentMonth ? 0 : -1}
+                      >
+                        <span className="calendar-date">{date.getDate()}</span>
+                        <div className="calendar-fixtures">
+                          {dayFixtures.map((fixture) => {
+                            const oppositionName =
+                              fixture.home_team_id === fixtureTeamId
+                                ? `${fixture.away_club_name} ${fixture.away_team_name}`
+                                : `${fixture.home_club_name} ${fixture.home_team_name}`;
+                            return (
+                              <button
+                                key={fixture.id}
+                                type="button"
+                                className={fixtureStatusClass(fixture.status)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (fixture.can_manage) {
+                                    startFixtureEdit(fixture);
+                                  }
+                                }}
+                                title={`${oppositionName}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+                              >
+                                {fixture.kickoff_at
+                                  ? new Date(fixture.kickoff_at).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "TBD"}{" "}
+                                vs {oppositionName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
+
+            {isFixtureComposerOpen ? (
+              <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+                <form className="fixture-composer" onSubmit={handleCreateOrUpdateFixture}>
+                  <h3>{editingFixtureId ? "Edit Fixture" : "Add Fixture"}</h3>
+                  <p className="muted">{selectedFixtureTeamName}</p>
+                  <SearchableSelect
+                    value={fixtureOpponentTeamId}
+                    onChange={(nextValue) => setFixtureOpponentTeamId(nextValue)}
+                    options={fixtureOppositionOptions.map((team) => ({
+                      value: team.id,
+                      label: team.display_name,
+                    }))}
+                    placeholder="Select opposition team"
+                  />
+                  <SearchableSelect
+                    value={fixtureFormat}
+                    options={MATCH_FORMAT_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                    onChange={(nextValue) => setFixtureFormat(nextValue as MatchFormat)}
+                    placeholder="Select fixture format"
+                  />
+                  <input
+                    type="datetime-local"
+                    value={fixtureKickoff}
+                    onChange={(event) => setFixtureKickoff(event.target.value)}
+                    step={900}
+                  />
+                  <SearchableSelect
+                    value={fixtureStatus}
+                    options={FIXTURE_STATUS_OPTIONS}
+                    onChange={setFixtureStatus}
+                    placeholder="Select fixture status"
+                    disabled={!editingFixtureId}
+                  />
+                  <div className="member-actions">
+                    <button
+                      className="button primary"
+                      disabled={isSubmitting || !fixtureTeamId || !fixtureOpponentTeamId}
+                      type="submit"
+                    >
+                      {editingFixtureId ? "Save Fixture" : "Create Fixture"}
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={resetFixtureForm}
+                    >
+                      Cancel
+                    </button>
+                    {editingFixtureId ? (
+                      <button
+                        className="button secondary"
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => handleDeleteFixture(editingFixtureId)}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </form>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         {section === "teams" ? (
           <section className="section-card two-col">
             <form className="stack-form" onSubmit={handleCreateTeam}>
               <h3>Create Team</h3>
-              <input
-                placeholder="Club name"
+              <SearchableSelect
                 value={clubName}
-                onChange={(event) => setClubName(event.target.value)}
-                required
+                onChange={setClubName}
+                options={clubNameOptions}
+                placeholder="Select club"
               />
               <input
                 placeholder="Team name"
@@ -1012,20 +1565,12 @@ function App() {
                 onChange={(event) => setPlayerName(event.target.value)}
                 required
               />
-              <select
+              <SearchableSelect
                 value={selectedTeamForPlayers}
-                onChange={(event) => setSelectedTeamForPlayers(event.target.value)}
-                required
-              >
-                <option value="" disabled>
-                  Select team
-                </option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.display_name}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedTeamForPlayers}
+                options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
+                placeholder="Select team"
+              />
               <input
                 placeholder="Shirt number"
                 value={shirtNumber}
@@ -1098,20 +1643,12 @@ function App() {
           <section className="section-card two-col">
             <form className="stack-form" onSubmit={handleAddTeamMember}>
               <h3>Manage Members</h3>
-              <select
+              <SearchableSelect
                 value={selectedTeamForMembers}
-                onChange={(event) => setSelectedTeamForMembers(event.target.value)}
-                required
-              >
-                <option value="" disabled>
-                  Select team
-                </option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.display_name}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedTeamForMembers}
+                options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
+                placeholder="Select team"
+              />
               <input
                 placeholder="user@email.com"
                 type="email"
@@ -1119,13 +1656,12 @@ function App() {
                 onChange={(event) => setNewMemberEmail(event.target.value)}
                 required
               />
-              <select
+              <SearchableSelect
                 value={newMemberRole}
-                onChange={(event) => setNewMemberRole(event.target.value as TeamRole)}
-              >
-                <option value="team_admin">Admin</option>
-                <option value="data_enterer">Data Enterer</option>
-              </select>
+                onChange={(nextValue) => setNewMemberRole(nextValue as TeamRole)}
+                options={TEAM_MEMBER_ROLE_OPTIONS}
+                placeholder="Select role"
+              />
               <button
                 className="button primary"
                 disabled={isSubmitting || !selectedTeamForMembers || !selectedTeamForMembersCanManage}
@@ -1160,16 +1696,13 @@ function App() {
                       {isCurrentUser ? " - You" : ""}
                     </span>
                     <div className="member-actions">
-                      <select
+                      <SearchableSelect
                         value={membership.role}
-                        onChange={(event) =>
-                          handleMemberRoleChange(membership.id, event.target.value as TeamRole)
-                        }
+                        onChange={(nextValue) => handleMemberRoleChange(membership.id, nextValue as TeamRole)}
+                        options={TEAM_MEMBER_ROLE_OPTIONS}
+                        placeholder="Select role"
                         disabled={isSubmitting || !selectedTeamForMembersCanManage}
-                      >
-                        <option value="team_admin">Admin</option>
-                        <option value="data_enterer">Data Enterer</option>
-                      </select>
+                      />
                       <button
                         className="button secondary"
                         onClick={() => handleDeleteTeamMember(membership.id)}
@@ -1298,20 +1831,12 @@ function App() {
                 <div>
                   <h3>Create Team</h3>
                   <form className="stack-form" onSubmit={handleCreateAdminTeam}>
-                    <select
+                    <SearchableSelect
                       value={adminCreateTeamClubId}
-                      onChange={(event) => setAdminCreateTeamClubId(event.target.value)}
-                      required
-                    >
-                      <option value="" disabled>
-                        Select club
-                      </option>
-                      {adminOverview.clubs.map((club) => (
-                        <option key={club.id} value={club.id}>
-                          {club.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAdminCreateTeamClubId}
+                      options={adminOverview.clubs.map((club) => ({ value: club.id, label: club.name }))}
+                      placeholder="Select club"
+                    />
                     <input
                       placeholder="Team name"
                       value={adminCreateTeamName}
@@ -1330,20 +1855,15 @@ function App() {
                 <div>
                   <h3>Assign Team Admin</h3>
                   <form className="stack-form" onSubmit={handleAssignTeamAdmin}>
-                    <select
+                    <SearchableSelect
                       value={adminAssignTeamId}
-                      onChange={(event) => setAdminAssignTeamId(event.target.value)}
-                      required
-                    >
-                      <option value="" disabled>
-                        Select team
-                      </option>
-                      {adminOverview.teams.map((adminTeam) => (
-                        <option key={adminTeam.id} value={adminTeam.id}>
-                          {adminTeam.club_name} {adminTeam.team_name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAdminAssignTeamId}
+                      options={adminOverview.teams.map((adminTeam) => ({
+                        value: adminTeam.id,
+                        label: `${adminTeam.club_name} ${adminTeam.team_name}`,
+                      }))}
+                      placeholder="Select team"
+                    />
                     <input
                       placeholder="admin@email.com"
                       type="email"
@@ -1380,16 +1900,15 @@ function App() {
                       <div>
                         {adminEditingTeamId === adminTeam.id ? (
                           <div className="member-actions">
-                            <select
+                            <SearchableSelect
                               value={adminEditingTeamClubId}
-                              onChange={(event) => setAdminEditingTeamClubId(event.target.value)}
-                            >
-                              {adminOverview.clubs.map((club) => (
-                                <option key={club.id} value={club.id}>
-                                  {club.name}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={setAdminEditingTeamClubId}
+                              options={adminOverview.clubs.map((club) => ({
+                                value: club.id,
+                                label: club.name,
+                              }))}
+                              placeholder="Select club"
+                            />
                             <input
                               value={adminEditingTeamName}
                               onChange={(event) => setAdminEditingTeamName(event.target.value)}

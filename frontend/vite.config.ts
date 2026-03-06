@@ -9,6 +9,7 @@ export default defineConfig({
       "/health": "http://127.0.0.1:8000",
       "/teams": "http://127.0.0.1:8000",
       "/players": "http://127.0.0.1:8000",
+      "/matches": "http://127.0.0.1:8000",
       "/admin": "http://127.0.0.1:8000",
     },
   },

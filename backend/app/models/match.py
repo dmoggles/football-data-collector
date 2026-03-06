@@ -1,10 +1,18 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class MatchFormat(StrEnum):
+    FIVE_ASIDE = "5_aside"
+    SEVEN_ASIDE = "7_aside"
+    NINE_ASIDE = "9_aside"
+    ELEVEN_ASIDE = "11_aside"
 
 
 class Match(Base):
@@ -19,6 +27,12 @@ class Match(Base):
     )
     home_team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id"), nullable=False)
     away_team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id"), nullable=False)
+    format: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=MatchFormat.ELEVEN_ASIDE.value,
+        server_default=text("'11_aside'"),
+    )
     kickoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="scheduled")
     created_at: Mapped[datetime] = mapped_column(

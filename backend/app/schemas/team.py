@@ -38,3 +38,10 @@ class TeamResponse(BaseModel):
     club_name: str
     team_name: str
     my_role: str
+
+
+class TeamDirectoryResponse(BaseModel):
+    id: str
+    club_id: str
+    club_name: str
+    team_name: str

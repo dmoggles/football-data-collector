@@ -57,6 +57,14 @@ export type Team = {
   display_name: string;
 };
 
+export type TeamDirectory = {
+  id: string;
+  club_id: string;
+  club_name: string;
+  team_name: string;
+  display_name: string;
+};
+
 export type TeamMember = {
   id: string;
   team_id: string;
@@ -71,6 +79,22 @@ export type Player = {
   display_name: string;
   shirt_number: number | null;
   position: string | null;
+};
+
+export type MatchFormat = "5_aside" | "7_aside" | "9_aside" | "11_aside";
+
+export type Fixture = {
+  id: string;
+  home_team_id: string;
+  home_team_name: string;
+  home_club_name: string;
+  away_team_id: string;
+  away_team_name: string;
+  away_club_name: string;
+  format: MatchFormat;
+  kickoff_at: string | null;
+  status: string;
+  can_manage: boolean;
 };
 
 export type AuthPayload = {
@@ -97,4 +121,12 @@ export type PlayerPayload = {
   display_name: string;
   shirt_number: number | null;
   position: string | null;
+};
+
+export type FixturePayload = {
+  home_team_id: string;
+  away_team_id: string;
+  format: MatchFormat;
+  kickoff_at: string | null;
+  status: string;
 };
