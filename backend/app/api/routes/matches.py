@@ -85,6 +85,23 @@ def ensure_fixture_manage_access(db: Session, match: Match, user_id: str) -> Non
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team admin access required")
 
 
+def ensure_fixture_create_access(db: Session, home_team_id: str, away_team_id: str, user_id: str) -> None:
+    home_role = db.scalar(
+        select(TeamMembership.role).where(
+            TeamMembership.user_id == user_id,
+            TeamMembership.team_id == home_team_id,
+        )
+    )
+    away_role = db.scalar(
+        select(TeamMembership.role).where(
+            TeamMembership.user_id == user_id,
+            TeamMembership.team_id == away_team_id,
+        )
+    )
+    if not bool((home_role and is_team_admin_role(home_role)) or (away_role and is_team_admin_role(away_role))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team admin access required")
+
+
 @router.get("", response_model=list[MatchResponse])
 def list_matches(
     team_id: str | None = Query(default=None),
@@ -164,7 +181,7 @@ def create_match(
             detail="Home and away teams must differ",
         )
 
-    acting_membership = ensure_team_admin(db, payload.home_team_id, user.id)
+    ensure_fixture_create_access(db, payload.home_team_id, payload.away_team_id, user.id)
     home_team_record = get_team_or_404(db, payload.home_team_id)
     away_team_record = get_team_or_404(db, payload.away_team_id)
 
@@ -188,7 +205,7 @@ def create_match(
         home_club_name=home_club_name,
         away_team_name=away_team_record.name,
         away_club_name=away_club_name,
-        can_manage=is_team_admin_role(acting_membership.role),
+        can_manage=True,
     )
 
 

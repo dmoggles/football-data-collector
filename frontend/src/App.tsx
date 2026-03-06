@@ -146,6 +146,23 @@ function toQuarterHourTime(date: Date): string {
   return `${hours}:${mins}`;
 }
 
+function timeToMinutes(timeValue: string): number | null {
+  const [hoursText, minutesText] = timeValue.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return hours * 60 + minutes;
+}
+
 type SearchableOption = {
   value: string;
   label: string;
@@ -447,6 +464,60 @@ function App() {
     }
     return grouped;
   }, [fixtures]);
+  const fixtureConflictWarnings = useMemo(() => {
+    if (!fixtureTeamId || !fixtureOpponentTeamId || !fixtureKickoffDate) {
+      return [];
+    }
+
+    const targetKickoffTime = fixtureKickoffTime || "";
+    const targetKickoffMinutes = targetKickoffTime ? timeToMinutes(targetKickoffTime) : null;
+    const warnings: string[] = [];
+    let hasSameDayOppositionConflict = false;
+    let hasKickoffOverlap = false;
+
+    for (const fixture of fixtures) {
+      if (editingFixtureId && fixture.id === editingFixtureId) {
+        continue;
+      }
+
+      const fixtureDateKey = fixture.kickoff_at ? toLocalDateKey(new Date(fixture.kickoff_at)) : "";
+      const fixtureTime = fixture.kickoff_at ? new Date(fixture.kickoff_at).toTimeString().slice(0, 5) : "";
+      const fixtureMinutes = fixtureTime ? timeToMinutes(fixtureTime) : null;
+      const fixtureOppositionId =
+        fixture.home_team_id === fixtureTeamId ? fixture.away_team_id : fixture.home_team_id;
+
+      if (
+        fixtureDateKey === fixtureKickoffDate &&
+        fixtureOppositionId === fixtureOpponentTeamId
+      ) {
+        hasSameDayOppositionConflict = true;
+      }
+      if (
+        targetKickoffTime &&
+        targetKickoffMinutes !== null &&
+        fixtureMinutes !== null &&
+        fixtureDateKey === fixtureKickoffDate &&
+        Math.abs(fixtureMinutes - targetKickoffMinutes) < 60
+      ) {
+        hasKickoffOverlap = true;
+      }
+    }
+
+    if (hasSameDayOppositionConflict) {
+      warnings.push("Potential conflict: you already have a fixture against this opposition on the same date.");
+    }
+    if (hasKickoffOverlap) {
+      warnings.push("Potential conflict: another fixture for this team starts within 60 minutes of this kickoff.");
+    }
+    return warnings;
+  }, [
+    editingFixtureId,
+    fixtureKickoffDate,
+    fixtureKickoffTime,
+    fixtureOpponentTeamId,
+    fixtureTeamId,
+    fixtures,
+  ]);
   const calendarCells = useMemo(() => {
     const year = fixtureCalendarMonth.getFullYear();
     const month = fixtureCalendarMonth.getMonth();
@@ -1531,6 +1602,7 @@ function App() {
                               fixture.home_team_id === fixtureTeamId
                                 ? `${fixture.away_club_name} ${fixture.away_team_name}`
                                 : `${fixture.home_club_name} ${fixture.home_team_name}`;
+                            const venueLabel = fixture.home_team_id === fixtureTeamId ? "H" : "A";
                             return (
                               <button
                                 key={fixture.id}
@@ -1551,6 +1623,9 @@ function App() {
                                     : ""
                                 } · ${fixture.format.replace("_", " ")}`}
                               >
+                                <span className={`fixture-venue-badge ${venueLabel === "H" ? "home" : "away"}`}>
+                                  {venueLabel}
+                                </span>{" "}
                                 {fixtureFormatIcon(fixture.format)}{" "}
                                 {fixture.kickoff_at
                                   ? new Date(fixture.kickoff_at).toLocaleTimeString([], {
@@ -1635,6 +1710,15 @@ function App() {
                       ))}
                     </select>
                   </div>
+                  {fixtureConflictWarnings.length > 0 ? (
+                    <div className="stack-form">
+                      {fixtureConflictWarnings.map((warning) => (
+                        <p className="muted" key={warning}>
+                          {warning}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
                   <SearchableSelect
                     value={fixtureStatus}
                     options={FIXTURE_STATUS_OPTIONS}
