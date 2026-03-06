@@ -187,8 +187,13 @@ function SearchableSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredOptions = query.trim()
-    ? options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()))
+  const selectedOptionLabel = options.find((option) => option.value === value)?.label ?? "";
+  const normalizedQuery = query.trim().toLowerCase();
+  const shouldFilter = Boolean(
+    normalizedQuery && normalizedQuery !== selectedOptionLabel.trim().toLowerCase(),
+  );
+  const filteredOptions = shouldFilter
+    ? options.filter((option) => option.label.toLowerCase().includes(normalizedQuery))
     : options;
 
   const selectOption = useCallback(
@@ -422,9 +427,11 @@ function App() {
     [fixtureTeamId, teamDirectory],
   );
   const clubNameOptions = useMemo(() => {
-    const uniqueClubNames = Array.from(new Set(teamDirectory.map((team) => team.club_name.trim()).filter(Boolean)));
+    const teamDirectoryClubNames = teamDirectory.map((team) => team.club_name.trim()).filter(Boolean);
+    const adminClubNames = adminOverview?.clubs.map((club) => club.name.trim()).filter(Boolean) ?? [];
+    const uniqueClubNames = Array.from(new Set([...teamDirectoryClubNames, ...adminClubNames]));
     return uniqueClubNames.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name }));
-  }, [teamDirectory]);
+  }, [adminOverview, teamDirectory]);
   const selectedFixtureTeamName = useMemo(
     () => ownedTeams.find((team) => team.id === fixtureTeamId)?.display_name ?? "",
     [fixtureTeamId, ownedTeams],
