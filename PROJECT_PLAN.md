@@ -98,6 +98,11 @@ Build a web app for fast football event collection during live matches, with use
 4. Implement auth endpoints (`/auth/register`, `/auth/login`, `/auth/logout`, `/auth/me`)
 5. Add ownership guard utility for all protected queries
 
+## Deferred Admin Tasks
+- Add explicit team claim and ownership transfer workflows.
+- Add audit log filtering in UI (actor, action, date range).
+- Add role diagnostics view/endpoint to inspect computed permissions per user/team.
+
 ## Risks and Mitigations
 - Risk: Session/auth complexity slows early UI progress
   - Mitigation: complete auth first and reuse dependency guards everywhere

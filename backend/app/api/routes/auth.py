@@ -8,7 +8,7 @@ from app.api.deps import get_db
 from app.core.config import settings
 from app.models.session import Session as UserSession
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, UserResponse
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, RegisterRequest, UserResponse
 from app.services.security import hash_password, verify_password
 from app.services.sessions import create_session, hash_session_token
 
@@ -71,3 +71,26 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
 @router.get("/me", response_model=UserResponse)
 def me(user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse.model_validate(user)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        )
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different",
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    db.commit()

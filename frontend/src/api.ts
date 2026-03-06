@@ -93,6 +93,13 @@ export async function getMe(): Promise<User> {
   return request<User>("/auth/me", "GET");
 }
 
+export async function changePassword(payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<void> {
+  await request<void>("/auth/change-password", "POST", payload);
+}
+
 export async function listTeams(): Promise<Team[]> {
   const teams = await request<TeamApiResponse[]>("/teams", "GET");
   return teams.map(toTeam);

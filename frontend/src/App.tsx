@@ -6,6 +6,7 @@ import {
   addTeamMember,
   assignAdminTeamOwner,
   assignUserGlobalRole,
+  changePassword,
   createAdminClub,
   createAdminTeam,
   deleteAdminClub,
@@ -81,6 +82,9 @@ function App() {
   const [playerName, setPlayerName] = useState("");
   const [shirtNumber, setShirtNumber] = useState("");
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
 
   const [selectedTeamForPlayers, setSelectedTeamForPlayers] = useState("");
   const [selectedTeamForMembers, setSelectedTeamForMembers] = useState("");
@@ -506,6 +510,46 @@ function App() {
     }
   };
 
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPasswordInput !== confirmPasswordInput) {
+      setError("New password and confirmation do not match");
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await changePassword({
+        current_password: currentPasswordInput,
+        new_password: newPasswordInput,
+      });
+      setUser(null);
+      setEmail("");
+      setPassword("");
+      setCurrentPasswordInput("");
+      setNewPasswordInput("");
+      setConfirmPasswordInput("");
+      setTeams([]);
+      setPlayers([]);
+      setTeamMembers([]);
+      setAdminOverview(null);
+      setAdminAuditLogs([]);
+      setIsSuperAdmin(false);
+      setAdminSection("home");
+      setSection("dashboard");
+      setMode("login");
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Unable to change password");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCreateAdminClub = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -865,19 +909,54 @@ function App() {
         {error ? <p className="error-banner">{error}</p> : null}
 
         {section === "dashboard" ? (
-          <section className="section-card stats-grid">
-            <article>
-              <h3>Teams</h3>
-              <p>{dashboardStats.teams}</p>
-            </article>
-            <article>
-              <h3>Players</h3>
-              <p>{dashboardStats.players}</p>
-            </article>
-            <article>
-              <h3>Members</h3>
-              <p>{dashboardStats.members}</p>
-            </article>
+          <section className="section-card">
+            <div className="stats-grid">
+              <article>
+                <h3>Teams</h3>
+                <p>{dashboardStats.teams}</p>
+              </article>
+              <article>
+                <h3>Players</h3>
+                <p>{dashboardStats.players}</p>
+              </article>
+              <article>
+                <h3>Members</h3>
+                <p>{dashboardStats.members}</p>
+              </article>
+            </div>
+            <div className="stack-form" style={{ marginTop: "1rem" }}>
+              <h3>Account Security</h3>
+              <form className="stack-form" onSubmit={handleChangePassword}>
+                <input
+                  type="password"
+                  placeholder="Current password"
+                  value={currentPasswordInput}
+                  onChange={(event) => setCurrentPasswordInput(event.target.value)}
+                  minLength={8}
+                  required
+                />
+                <input
+                  type="password"
+                  placeholder="New password"
+                  value={newPasswordInput}
+                  onChange={(event) => setNewPasswordInput(event.target.value)}
+                  minLength={8}
+                  required
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPasswordInput}
+                  onChange={(event) => setConfirmPasswordInput(event.target.value)}
+                  minLength={8}
+                  required
+                />
+                <button className="button secondary" type="submit" disabled={isSubmitting}>
+                  Change Password
+                </button>
+                <p className="muted">You will be logged out after password change.</p>
+              </form>
+            </div>
           </section>
         ) : null}
 
