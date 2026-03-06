@@ -46,12 +46,13 @@ def build_team_member_response(db: Session, membership: TeamMembership) -> TeamM
     )
 
 
-def build_team_response(team: Team, club_name: str) -> TeamResponse:
+def build_team_response(team: Team, club_name: str, my_role: str) -> TeamResponse:
     return TeamResponse(
         id=team.id,
         club_id=team.club_id,
         club_name=club_name,
         team_name=team.name,
+        my_role=my_role,
     )
 
 
@@ -72,14 +73,14 @@ def list_teams(
     user: User = Depends(get_current_user),
 ) -> list[TeamResponse]:
     query = (
-        select(Team, Club.name)
+        select(Team, Club.name, TeamMembership.role)
         .join(Club, Club.id == Team.club_id)
         .join(TeamMembership, TeamMembership.team_id == Team.id)
         .where(TeamMembership.user_id == user.id)
         .order_by(Club.name.asc(), Team.name.asc())
     )
     rows = db.execute(query).all()
-    return [build_team_response(team, club_name) for team, club_name in rows]
+    return [build_team_response(team, club_name, role) for team, club_name, role in rows]
 
 
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
@@ -106,7 +107,7 @@ def create_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name)
+    return build_team_response(team, club.name, membership.role)
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
@@ -116,7 +117,7 @@ def update_team(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TeamResponse:
-    ensure_team_admin(db, team_id, user.id)
+    acting_membership = ensure_team_admin(db, team_id, user.id)
     team = get_team_or_404(db, team_id)
     club = get_club_by_name_or_404(db, payload.club_name)
 
@@ -133,7 +134,7 @@ def update_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name)
+    return build_team_response(team, club.name, acting_membership.role)
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

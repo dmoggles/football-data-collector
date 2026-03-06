@@ -37,3 +37,4 @@ class TeamResponse(BaseModel):
     club_id: str
     club_name: str
     team_name: str
+    my_role: str

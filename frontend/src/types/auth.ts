@@ -1,4 +1,4 @@
-export type TeamRole = "admin" | "data_enterer";
+export type TeamRole = "admin" | "team_admin" | "data_enterer" | "coach" | "parent";
 export type GlobalRole = "super_admin";
 
 export type User = {
@@ -53,6 +53,7 @@ export type Team = {
   club_id: string;
   club_name: string;
   team_name: string;
+  my_role: TeamRole;
   display_name: string;
 };
 

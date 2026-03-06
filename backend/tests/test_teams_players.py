@@ -61,6 +61,7 @@ def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
     )
     assert create_team_response.status_code == 201
     team_id = create_team_response.json()["id"]
+    assert create_team_response.json()["my_role"] == "team_admin"
 
     members_response = client.get(f"/teams/{team_id}/members")
     assert members_response.status_code == 200
@@ -107,6 +108,10 @@ def test_data_enterer_cannot_modify_team_or_players() -> None:
     list_teams_response = client.get("/teams")
     assert list_teams_response.status_code == 200
     assert any(team["id"] == team_id for team in list_teams_response.json())
+    assert any(
+        team["id"] == team_id and team["my_role"] == "data_enterer"
+        for team in list_teams_response.json()
+    )
 
     create_player_response = client.post(
         "/players",

@@ -56,6 +56,10 @@ const ADMIN_SUB_NAV_ITEMS: Array<{ id: AdminSection; label: string }> = [
   { id: "audit", label: "Audit" },
 ];
 
+function isTeamAdminRole(role: TeamRole): boolean {
+  return role === "team_admin" || role === "admin";
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<AuthMode>("login");
@@ -140,6 +144,31 @@ function App() {
     }
     return adminOverview.teams.filter((team) => team.owners.length === 0);
   }, [adminOverview, showUnclaimedOnly]);
+  const roleByTeamId = useMemo(() => {
+    const mapping: Record<string, TeamRole> = {};
+    for (const team of teams) {
+      mapping[team.id] = team.my_role;
+    }
+    return mapping;
+  }, [teams]);
+  const selectedTeamForPlayersCanManage = useMemo(
+    () =>
+      Boolean(
+        selectedTeamForPlayers &&
+          roleByTeamId[selectedTeamForPlayers] &&
+          isTeamAdminRole(roleByTeamId[selectedTeamForPlayers]),
+      ),
+    [roleByTeamId, selectedTeamForPlayers],
+  );
+  const selectedTeamForMembersCanManage = useMemo(
+    () =>
+      Boolean(
+        selectedTeamForMembers &&
+          roleByTeamId[selectedTeamForMembers] &&
+          isTeamAdminRole(roleByTeamId[selectedTeamForMembers]),
+      ),
+    [roleByTeamId, selectedTeamForMembers],
+  );
 
   const loadWorkspaceData = useCallback(async () => {
     setIsWorkspaceLoading(true);
@@ -223,8 +252,15 @@ function App() {
     if (section !== "members") {
       return;
     }
+    if (!selectedTeamForMembersCanManage) {
+      setTeamMembers([]);
+      setMembersLoadError(
+        selectedTeamForMembers ? "Admin access required to manage members for this team." : null,
+      );
+      return;
+    }
     void loadTeamMembers(selectedTeamForMembers);
-  }, [loadTeamMembers, section, selectedTeamForMembers, user]);
+  }, [loadTeamMembers, section, selectedTeamForMembers, selectedTeamForMembersCanManage, user]);
 
   const authSubmitLabel = useMemo(() => {
     if (isSubmitting) {
@@ -876,7 +912,8 @@ function App() {
                     className="button secondary"
                     onClick={() => handleDeleteTeam(team.id)}
                     type="button"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !isTeamAdminRole(team.my_role)}
+                    title={isTeamAdminRole(team.my_role) ? "Delete team" : "Team admin access required"}
                   >
                     Delete
                   </button>
@@ -933,11 +970,19 @@ function App() {
 
               <button
                 className="button primary"
-                disabled={isSubmitting || teams.length === 0 || !selectedTeamForPlayers}
+                disabled={
+                  isSubmitting ||
+                  teams.length === 0 ||
+                  !selectedTeamForPlayers ||
+                  !selectedTeamForPlayersCanManage
+                }
                 type="submit"
               >
                 Add Player
               </button>
+              {!selectedTeamForPlayersCanManage && selectedTeamForPlayers ? (
+                <p className="muted">Team admin access required to add players.</p>
+              ) : null}
             </form>
 
             <div>
@@ -954,7 +999,9 @@ function App() {
                     className="button secondary"
                     onClick={() => handleDeletePlayer(player.id)}
                     type="button"
-                    disabled={isSubmitting}
+                    disabled={
+                      isSubmitting || !isTeamAdminRole(roleByTeamId[player.team_id] ?? "data_enterer")
+                    }
                   >
                     Delete
                   </button>
@@ -993,16 +1040,19 @@ function App() {
                 value={newMemberRole}
                 onChange={(event) => setNewMemberRole(event.target.value as TeamRole)}
               >
-                <option value="admin">Admin</option>
+                <option value="team_admin">Admin</option>
                 <option value="data_enterer">Data Enterer</option>
               </select>
               <button
                 className="button primary"
-                disabled={isSubmitting || !selectedTeamForMembers}
+                disabled={isSubmitting || !selectedTeamForMembers || !selectedTeamForMembersCanManage}
                 type="submit"
               >
                 Add Member
               </button>
+              {!selectedTeamForMembersCanManage && selectedTeamForMembers ? (
+                <p className="muted">Team admin access required to manage members.</p>
+              ) : null}
             </form>
 
             <div>
@@ -1032,15 +1082,16 @@ function App() {
                         onChange={(event) =>
                           handleMemberRoleChange(membership.id, event.target.value as TeamRole)
                         }
+                        disabled={isSubmitting || !selectedTeamForMembersCanManage}
                       >
-                        <option value="admin">Admin</option>
+                        <option value="team_admin">Admin</option>
                         <option value="data_enterer">Data Enterer</option>
                       </select>
                       <button
                         className="button secondary"
                         onClick={() => handleDeleteTeamMember(membership.id)}
                         type="button"
-                        disabled={isSubmitting || isCurrentUser}
+                        disabled={isSubmitting || isCurrentUser || !selectedTeamForMembersCanManage}
                         title={isCurrentUser ? "You cannot remove your own membership" : "Remove member"}
                       >
                         Remove
