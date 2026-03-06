@@ -22,7 +22,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not session_record:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
 
-    if session_record.expires_at <= datetime.now(UTC):
+    expires_at = session_record.expires_at
+    if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    if expires_at <= datetime.now(UTC):
         db.execute(delete(UserSession).where(UserSession.id == session_record.id))
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
