@@ -1,14 +1,72 @@
-The high level goal of this project is to create a web app with a UI that would allow me to easily collect football events though intuitive clicking interface.   Some features that we want
-* Ability to set up a team of players ahead of time
-* Ability to set up matches ahead of time
-* On match day you can pre-load your squads and very easily data entry events such as shots, goals, and some other football events. 
-* It should automate as much as possible, such as keeping track of time for you.
-* User accounts with login/logout support
-* Session management so users stay authenticated securely
-* Team, player, and match setups should be associated with each user's account
+The high level goal of this project is to create a web app with a UI that allows fast football event collection through an intuitive interface.
 
-Technical note:
-* For Python dependency and environment management, use `uv`.
-* Use MySQL as the primary database.
+Core goals:
+- Set up teams and players ahead of time
+- Set up matches ahead of time
+- On match day, pre-load squads and quickly enter events (shots, goals, etc.)
+- Automate repetitive actions (including time tracking)
+- User accounts with login/logout support
+- Session management for secure persistent auth
+- Team, player, and match setup scoped to user access roles
 
-There may be some other good ideas, I'm not sure.  But we're going to do this gradually.
+Technical notes:
+- Python dependency/environment manager: `uv`
+- Primary database: MySQL
+
+## Local MySQL Dev/Test Setup
+
+This repo includes a local MySQL workflow for both development and testing databases.
+
+### 1. Start MySQL (Docker)
+From repo root:
+
+```powershell
+docker compose up -d mysql
+```
+
+This starts MySQL with:
+- Dev DB: `football_data_collector_dev`
+- Test DB: `football_data_collector_test`
+- User: `football_app`
+- Password: `football_app_password`
+
+### 2. Configure backend env
+
+Copy env template:
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+```
+
+(`backend\.env` is gitignored.)
+
+### 3. Apply migrations
+
+```powershell
+cd backend
+$env:UV_CACHE_DIR='..\.uv-cache'
+$env:UV_PYTHON_INSTALL_DIR='..\.uv-python'
+uv run alembic upgrade head
+```
+
+### 4. Apply migrations to test DB
+
+```powershell
+cd backend
+$env:UV_CACHE_DIR='..\.uv-cache'
+$env:UV_PYTHON_INSTALL_DIR='..\.uv-python'
+$env:APP_ENV='test'
+uv run alembic upgrade head
+```
+
+### 5. Run tests against local test DB
+
+```powershell
+powershell -ExecutionPolicy Bypass -File backend\scripts\run_tests_local.ps1
+```
+
+### Optional one-shot setup
+
+```powershell
+powershell -ExecutionPolicy Bypass -File backend\scripts\setup_local_db.ps1
+```

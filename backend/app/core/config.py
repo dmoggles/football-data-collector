@@ -13,12 +13,19 @@ class Settings(BaseSettings):
     mysql_port: int = 3306
     mysql_user: str = "football_app"
     mysql_password: str = "football_app_password"
-    mysql_database: str = "football_data_collector"
+    mysql_database: str = "football_data_collector_dev"
+    mysql_test_database: str = "football_data_collector_test"
     mysql_pool_pre_ping: bool = True
 
     session_cookie_name: str = "fdc_session"
     session_expiry_hours: int = Field(default=24, ge=1)
     session_secure_cookies: bool = False
+
+    @property
+    def active_mysql_database(self) -> str:
+        if self.app_env.lower() == "test":
+            return self.mysql_test_database
+        return self.mysql_database
 
     @property
     def sqlalchemy_database_uri(self) -> str:
@@ -27,7 +34,7 @@ class Settings(BaseSettings):
         return (
             "mysql+pymysql://"
             f"{encoded_user}:{encoded_password}@{self.mysql_host}:{self.mysql_port}/"
-            f"{self.mysql_database}"
+            f"{self.active_mysql_database}"
         )
 
     model_config = SettingsConfigDict(
