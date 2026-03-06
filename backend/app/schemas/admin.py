@@ -1,4 +1,8 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
+
+from app.models.global_role import GlobalRoleType
 
 
 class ClubCreateRequest(BaseModel):
@@ -52,3 +56,18 @@ class AdminOverviewResponse(BaseModel):
     users: list[AdminUserOverview]
     clubs: list[AdminClubOverview]
     teams: list[AdminTeamOverview]
+
+
+class GlobalRoleAssignRequest(BaseModel):
+    role: GlobalRoleType
+
+
+class AdminAuditLogEntry(BaseModel):
+    id: str
+    actor_user_id: str
+    actor_user_email: str
+    action: str
+    target_type: str
+    target_id: str
+    metadata_json: dict | None
+    created_at: datetime

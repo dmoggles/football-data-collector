@@ -1,7 +1,9 @@
 import type {
+  AdminAuditLogEntry,
   AdminOverview,
   AddTeamMemberPayload,
   AuthPayload,
+  GlobalRole,
   Player,
   PlayerPayload,
   Team,
@@ -179,4 +181,20 @@ export async function updateAdminTeam(
 
 export async function deleteAdminTeam(teamId: string): Promise<void> {
   await request<void>(`/admin/teams/${teamId}`, "DELETE");
+}
+
+export async function removeAdminTeamOwner(teamId: string, userId: string): Promise<void> {
+  await request<void>(`/admin/teams/${teamId}/admins/${userId}`, "DELETE");
+}
+
+export async function assignUserGlobalRole(userId: string, role: GlobalRole): Promise<void> {
+  await request<void>(`/admin/users/${userId}/global-roles`, "POST", { role });
+}
+
+export async function revokeUserGlobalRole(userId: string, role: GlobalRole): Promise<void> {
+  await request<void>(`/admin/users/${userId}/global-roles/${role}`, "DELETE");
+}
+
+export async function getAdminAuditLogs(limit = 100): Promise<AdminAuditLogEntry[]> {
+  return request<AdminAuditLogEntry[]>(`/admin/audit-logs?limit=${encodeURIComponent(String(limit))}`, "GET");
 }

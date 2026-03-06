@@ -5,6 +5,7 @@ import "./index.css";
 import {
   addTeamMember,
   assignAdminTeamOwner,
+  assignUserGlobalRole,
   createAdminClub,
   createAdminTeam,
   deleteAdminClub,
@@ -15,22 +16,25 @@ import {
   deleteTeam,
   deleteTeamMember,
   getAdminOverview,
+  getAdminAuditLogs,
   getMe,
   listPlayers,
   listTeamMembers,
   listTeams,
   login,
   logout,
+  removeAdminTeamOwner,
   register,
+  revokeUserGlobalRole,
   updateAdminTeam,
   updateAdminClub,
   updateTeamMember,
 } from "./api";
-import type { AdminOverview, Player, Team, TeamMember, TeamRole, User } from "./types/auth";
+import type { AdminAuditLogEntry, AdminOverview, Player, Team, TeamMember, TeamRole, User } from "./types/auth";
 
 type AuthMode = "login" | "register";
 type Section = "dashboard" | "teams" | "players" | "members" | "admin";
-type AdminSection = "home" | "clubs" | "teams" | "users";
+type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
 
 const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"];
 const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
@@ -49,6 +53,7 @@ const ADMIN_SUB_NAV_ITEMS: Array<{ id: AdminSection; label: string }> = [
   { id: "clubs", label: "Clubs" },
   { id: "teams", label: "Teams" },
   { id: "users", label: "Users" },
+  { id: "audit", label: "Audit" },
 ];
 
 function App() {
@@ -65,6 +70,7 @@ function App() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
+  const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLogEntry[]>([]);
 
   const [clubName, setClubName] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -175,13 +181,15 @@ function App() {
   const loadAdminData = useCallback(async () => {
     setIsAdminLoading(true);
     try {
-      const overview = await getAdminOverview();
+      const [overview, auditLogs] = await Promise.all([getAdminOverview(), getAdminAuditLogs(150)]);
       setAdminOverview(overview);
+      setAdminAuditLogs(auditLogs);
       setIsSuperAdmin(true);
       setAdminAssignTeamId((current) => current || overview.teams[0]?.id || "");
       setAdminCreateTeamClubId((current) => current || overview.clubs[0]?.id || "");
     } catch {
       setAdminOverview(null);
+      setAdminAuditLogs([]);
       setIsSuperAdmin(false);
       if (section === "admin") {
         setSection("dashboard");
@@ -271,6 +279,7 @@ function App() {
       setPlayers([]);
       setTeamMembers([]);
       setAdminOverview(null);
+      setAdminAuditLogs([]);
       setIsSuperAdmin(false);
       setAdminSection("home");
       setSection("dashboard");
@@ -499,6 +508,63 @@ function App() {
         setError(requestError.message);
       } else {
         setError("Failed to assign team admin");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveTeamAdmin = async (teamId: string, userId: string, userEmail: string) => {
+    if (!window.confirm(`Remove '${userEmail}' as admin for this team?`)) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await removeAdminTeamOwner(teamId, userId);
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to remove team admin");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGrantSuperAdmin = async (userId: string) => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await assignUserGlobalRole(userId, "super_admin");
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to grant super admin role");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRevokeSuperAdmin = async (userId: string, emailAddress: string) => {
+    if (!window.confirm(`Revoke super admin role from '${emailAddress}'?`)) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await revokeUserGlobalRole(userId, "super_admin");
+      await loadAdminData();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to revoke super admin role");
       }
     } finally {
       setIsSubmitting(false);
@@ -1201,11 +1267,27 @@ function App() {
                             <span>
                               {adminTeam.club_name} {adminTeam.team_name}
                             </span>
-                            <p className="muted">
-                              {adminTeam.owners.length > 0
-                                ? adminTeam.owners.map((owner) => owner.user_email).join(", ")
-                                : "Unclaimed"}
-                            </p>
+                            {adminTeam.owners.length > 0 ? (
+                              <div className="stack-form">
+                                {adminTeam.owners.map((owner) => (
+                                  <div className="member-actions" key={`${adminTeam.id}-${owner.user_id}`}>
+                                    <span className="muted">{owner.user_email}</span>
+                                    <button
+                                      className="button secondary"
+                                      type="button"
+                                      disabled={isSubmitting}
+                                      onClick={() =>
+                                        handleRemoveTeamAdmin(adminTeam.id, owner.user_id, owner.user_email)
+                                      }
+                                    >
+                                      Remove Admin
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="muted">Unclaimed</p>
+                            )}
                           </>
                         )}
                       </div>
@@ -1277,12 +1359,56 @@ function App() {
                   {adminOverview.users.length === 0 ? <p className="muted">No users.</p> : null}
                   {adminOverview.users.map((adminUser) => (
                     <div className="list-row" key={adminUser.id}>
-                      <span>{adminUser.email}</span>
-                      <span className="muted">
-                        {adminUser.global_roles.length > 0
-                          ? adminUser.global_roles.join(", ")
-                          : "No global roles"}
-                      </span>
+                      <div>
+                        <span>{adminUser.email}</span>
+                        <p className="muted">
+                          {adminUser.global_roles.length > 0
+                            ? adminUser.global_roles.join(", ")
+                            : "No global roles"}
+                        </p>
+                      </div>
+                      <div className="member-actions">
+                        {adminUser.global_roles.includes("super_admin") ? (
+                          <button
+                            className="button secondary"
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => handleRevokeSuperAdmin(adminUser.id, adminUser.email)}
+                          >
+                            Revoke Super Admin
+                          </button>
+                        ) : (
+                          <button
+                            className="button secondary"
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => handleGrantSuperAdmin(adminUser.id)}
+                          >
+                            Make Super Admin
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {adminSection === "audit" ? (
+              <div className="stack-form">
+                <div>
+                  <h3>Audit Log ({adminAuditLogs.length})</h3>
+                  {adminAuditLogs.length === 0 ? <p className="muted">No audit records.</p> : null}
+                  {adminAuditLogs.map((entry) => (
+                    <div className="list-row" key={entry.id}>
+                      <div>
+                        <span>{entry.action}</span>
+                        <p className="muted">
+                          {entry.actor_user_email} · {new Date(entry.created_at).toLocaleString()}
+                        </p>
+                        <p className="muted">
+                          {entry.target_type}:{entry.target_id}
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>

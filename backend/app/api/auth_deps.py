@@ -6,8 +6,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.permissions import Permission, get_global_role, require_permission
 from app.core.config import settings
-from app.models.global_role import GlobalRole, GlobalRoleType
+from app.models.global_role import GlobalRoleType
 from app.models.session import Session as UserSession
 from app.models.user import User
 
@@ -40,22 +41,12 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 
 def is_super_admin(db: Session, user_id: str) -> bool:
-    role = db.scalar(
-        select(GlobalRole).where(
-            GlobalRole.user_id == user_id,
-            GlobalRole.role == GlobalRoleType.SUPER_ADMIN.value,
-        )
-    )
-    return role is not None
+    return get_global_role(db, user_id, GlobalRoleType.SUPER_ADMIN.value) is not None
 
 
 def require_super_admin(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    if not is_super_admin(db, user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Super admin access required",
-        )
+    require_permission(db=db, user_id=user.id, permission=Permission.SUPER_ADMIN)
     return user

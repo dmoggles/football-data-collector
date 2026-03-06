@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,7 @@ from app.api.deps import get_db
 from app.api.entitlements import get_team_or_404
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.club import Club
-from app.models.global_role import GlobalRole
+from app.models.global_role import GlobalRole, GlobalRoleType
 from app.models.player import Player
 from app.models.team import Team
 from app.models.team_membership import (
@@ -19,6 +19,7 @@ from app.models.team_membership import (
 )
 from app.models.user import User
 from app.schemas.admin import (
+    AdminAuditLogEntry,
     AdminClubOverview,
     AdminOverviewResponse,
     AdminTeamCreateRequest,
@@ -29,6 +30,7 @@ from app.schemas.admin import (
     AssignTeamAdminRequest,
     ClubCreateRequest,
     ClubUpdateRequest,
+    GlobalRoleAssignRequest,
 )
 from app.schemas.team import TeamMemberResponse
 
@@ -68,6 +70,33 @@ def write_audit_log(
             target_id=target_id,
             metadata_json=metadata_json,
         )
+    )
+
+
+def build_audit_log_response(db: Session, row: AdminAuditLog) -> AdminAuditLogEntry:
+    actor_email = (
+        db.scalar(select(User.email).where(User.id == row.actor_user_id)) or row.actor_user_id
+    )
+    return AdminAuditLogEntry(
+        id=row.id,
+        actor_user_id=row.actor_user_id,
+        actor_user_email=actor_email,
+        action=row.action,
+        target_type=row.target_type,
+        target_id=row.target_id,
+        metadata_json=row.metadata_json,
+        created_at=row.created_at,
+    )
+
+
+def count_super_admins(db: Session) -> int:
+    return int(
+        db.scalar(
+            select(func.count()).select_from(GlobalRole).where(
+                GlobalRole.role == GlobalRoleType.SUPER_ADMIN.value
+            )
+        )
+        or 0
     )
 
 
@@ -158,6 +187,96 @@ def create_club(
     )
     db.commit()
     return {"id": club.id, "name": club.name}
+
+
+@router.get("/audit-logs", response_model=list[AdminAuditLogEntry])
+def get_audit_logs(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+) -> list[AdminAuditLogEntry]:
+    safe_limit = min(max(limit, 1), 500)
+    rows = db.scalars(
+        select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(safe_limit)
+    ).all()
+    return [build_audit_log_response(db, row) for row in rows]
+
+
+@router.post("/users/{user_id}/global-roles")
+def assign_global_role(
+    user_id: str,
+    payload: GlobalRoleAssignRequest,
+    db: Session = Depends(get_db),
+    super_admin: User = Depends(require_super_admin),
+) -> dict[str, str]:
+    target_user = db.scalar(select(User).where(User.id == user_id))
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    existing = db.scalar(
+        select(GlobalRole).where(
+            GlobalRole.user_id == user_id,
+            GlobalRole.role == payload.role.value,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Role already assigned")
+
+    role = GlobalRole(user_id=user_id, role=payload.role.value)
+    db.add(role)
+    db.flush()
+
+    write_audit_log(
+        db=db,
+        actor_user_id=super_admin.id,
+        action="assign_global_role",
+        target_type="global_role",
+        target_id=role.id,
+        metadata_json={"target_user_id": user_id, "role": payload.role.value},
+    )
+    db.commit()
+    return {"id": role.id, "user_id": user_id, "role": payload.role.value}
+
+
+@router.delete("/users/{user_id}/global-roles/{role}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_global_role(
+    user_id: str,
+    role: str,
+    db: Session = Depends(get_db),
+    super_admin: User = Depends(require_super_admin),
+) -> None:
+    target_user = db.scalar(select(User).where(User.id == user_id))
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    global_role = db.scalar(
+        select(GlobalRole).where(
+            GlobalRole.user_id == user_id,
+            GlobalRole.role == role,
+        )
+    )
+    if not global_role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Role assignment not found",
+        )
+
+    if role == GlobalRoleType.SUPER_ADMIN.value and count_super_admins(db) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot remove the last super admin",
+        )
+
+    write_audit_log(
+        db=db,
+        actor_user_id=super_admin.id,
+        action="revoke_global_role",
+        target_type="global_role",
+        target_id=global_role.id,
+        metadata_json={"target_user_id": user_id, "role": role},
+    )
+    db.delete(global_role)
+    db.commit()
 
 
 @router.patch("/clubs/{club_id}")
@@ -269,6 +388,38 @@ def assign_team_admin(
     db.commit()
     db.refresh(membership)
     return build_team_member_response(db, membership)
+
+
+@router.delete("/teams/{team_id}/admins/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_team_admin(
+    team_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    super_admin: User = Depends(require_super_admin),
+) -> None:
+    get_team_or_404(db, team_id)
+
+    membership = db.scalar(
+        select(TeamMembership).where(
+            TeamMembership.team_id == team_id,
+            TeamMembership.user_id == user_id,
+        )
+    )
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
+    if not is_team_admin_role(membership.role):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is not a team admin")
+
+    write_audit_log(
+        db=db,
+        actor_user_id=super_admin.id,
+        action="remove_team_admin",
+        target_type="team_membership",
+        target_id=membership.id,
+        metadata_json={"team_id": team_id, "target_user_id": user_id},
+    )
+    db.delete(membership)
+    db.commit()
 
 
 @router.post("/teams", status_code=status.HTTP_201_CREATED)

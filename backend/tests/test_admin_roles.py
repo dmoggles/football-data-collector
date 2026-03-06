@@ -33,6 +33,13 @@ def _grant_super_admin(email: str) -> None:
         db.commit()
 
 
+def _get_user_id(email: str) -> str:
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None
+        return user.id
+
+
 def test_super_admin_can_create_club() -> None:
     super_email, super_password = _register("super-club")
     _grant_super_admin(super_email)
@@ -188,6 +195,60 @@ def test_super_admin_can_delete_team_without_match_data() -> None:
     _login(super_email, super_password)
     delete_response = client.delete(f"/admin/teams/{team_id}")
     assert delete_response.status_code == 204
+
+
+def test_super_admin_can_remove_team_admin() -> None:
+    super_email, super_password = _register("super-remove-admin")
+    _grant_super_admin(super_email)
+    target_email, _ = _register("target-remove-admin")
+    target_id = _get_user_id(target_email)
+
+    with SessionLocal() as db:
+        club = Club(name=f"RemoveOwner-{uuid.uuid4().hex[:6]}")
+        db.add(club)
+        db.flush()
+        team = Team(club_id=club.id, name="U10")
+        db.add(team)
+        db.commit()
+        team_id = team.id
+
+    _login(super_email, super_password)
+    assign_response = client.post(
+        f"/admin/teams/{team_id}/assign-team-admin",
+        json={"user_email": target_email},
+    )
+    assert assign_response.status_code == 200
+
+    remove_response = client.delete(f"/admin/teams/{team_id}/admins/{target_id}")
+    assert remove_response.status_code == 204
+
+
+def test_super_admin_can_assign_and_revoke_super_admin_role() -> None:
+    super_email, super_password = _register("super-global-role")
+    _grant_super_admin(super_email)
+    target_email, _ = _register("target-global-role")
+    target_id = _get_user_id(target_email)
+
+    _login(super_email, super_password)
+    assign_response = client.post(
+        f"/admin/users/{target_id}/global-roles",
+        json={"role": "super_admin"},
+    )
+    assert assign_response.status_code == 200
+    assert assign_response.json()["role"] == "super_admin"
+
+    revoke_response = client.delete(f"/admin/users/{target_id}/global-roles/super_admin")
+    assert revoke_response.status_code == 204
+
+
+def test_super_admin_can_view_audit_logs() -> None:
+    super_email, super_password = _register("super-audit-view")
+    _grant_super_admin(super_email)
+    _login(super_email, super_password)
+
+    response = client.get("/admin/audit-logs")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
 
 
 def test_super_admin_can_view_admin_overview() -> None:
