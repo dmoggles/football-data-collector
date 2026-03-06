@@ -5,6 +5,7 @@ description = "Backend API for Football Data Collector"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.4",
+    "cryptography>=46.0.1",
     "fastapi>=0.135.1",
     "passlib[argon2]>=1.7.4",
     "pydantic-settings>=2.13.1",

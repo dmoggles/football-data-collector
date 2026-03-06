@@ -1,0 +1,128 @@
+import type {
+  AddTeamMemberPayload,
+  AuthPayload,
+  Player,
+  PlayerPayload,
+  Team,
+  TeamMember,
+  TeamPayload,
+  UpdateTeamMemberPayload,
+  User,
+} from "./types/auth";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
+
+type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+
+class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+function buildUrl(path: string): string {
+  if (!API_BASE_URL) {
+    return path;
+  }
+
+  const base = API_BASE_URL.endsWith("/") ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${cleanPath}`;
+}
+
+async function request<TResponse>(
+  path: string,
+  method: HttpMethod,
+  body?: unknown,
+): Promise<TResponse> {
+  const response = await fetch(buildUrl(path), {
+    method,
+    credentials: "include",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) {
+        message = payload.detail;
+      }
+    } catch {
+      // Keep default fallback if response body is not JSON.
+    }
+    throw new ApiError(message, response.status);
+  }
+
+  if (response.status === 204) {
+    return undefined as TResponse;
+  }
+
+  return (await response.json()) as TResponse;
+}
+
+export async function register(payload: AuthPayload): Promise<User> {
+  return request<User>("/auth/register", "POST", payload);
+}
+
+export async function login(payload: AuthPayload): Promise<User> {
+  return request<User>("/auth/login", "POST", payload);
+}
+
+export async function logout(): Promise<void> {
+  await request<void>("/auth/logout", "POST");
+}
+
+export async function getMe(): Promise<User> {
+  return request<User>("/auth/me", "GET");
+}
+
+export async function listTeams(): Promise<Team[]> {
+  return request<Team[]>("/teams", "GET");
+}
+
+export async function createTeam(payload: TeamPayload): Promise<Team> {
+  return request<Team>("/teams", "POST", payload);
+}
+
+export async function deleteTeam(teamId: string): Promise<void> {
+  await request<void>(`/teams/${teamId}`, "DELETE");
+}
+
+export async function listPlayers(teamId?: string): Promise<Player[]> {
+  const params = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
+  return request<Player[]>(`/players${params}`, "GET");
+}
+
+export async function createPlayer(payload: PlayerPayload): Promise<Player> {
+  return request<Player>("/players", "POST", payload);
+}
+
+export async function deletePlayer(playerId: string): Promise<void> {
+  await request<void>(`/players/${playerId}`, "DELETE");
+}
+
+export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {
+  return request<TeamMember[]>(`/teams/${teamId}/members`, "GET");
+}
+
+export async function addTeamMember(teamId: string, payload: AddTeamMemberPayload): Promise<TeamMember> {
+  return request<TeamMember>(`/teams/${teamId}/members`, "POST", payload);
+}
+
+export async function updateTeamMember(
+  teamId: string,
+  membershipId: string,
+  payload: UpdateTeamMemberPayload,
+): Promise<TeamMember> {
+  return request<TeamMember>(`/teams/${teamId}/members/${membershipId}`, "PATCH", payload);
+}
+
+export async function deleteTeamMember(teamId: string, membershipId: string): Promise<void> {
+  await request<void>(`/teams/${teamId}/members/${membershipId}`, "DELETE");
+}

@@ -17,7 +17,7 @@ import {
   logout,
   register,
   updateTeamMember,
-} from "./lib/api";
+} from "./api";
 import type { Player, Team, TeamMember, TeamRole, User } from "./types/auth";
 
 type AuthMode = "login" | "register";
@@ -718,6 +718,5 @@ function App() {
 }
 
 export default App;
-
 
 

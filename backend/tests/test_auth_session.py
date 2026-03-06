@@ -19,3 +19,21 @@ def test_login_persists_session_for_me_endpoint() -> None:
     me_response = client.get("/auth/me")
     assert me_response.status_code == 200
     assert me_response.json()["email"] == email
+
+
+def test_logout_invalidates_existing_session() -> None:
+    client = TestClient(app)
+    email = f"logout-{uuid.uuid4().hex[:10]}@test.local"
+    password = "Password123!"
+
+    register_response = client.post("/auth/register", json={"email": email, "password": password})
+    assert register_response.status_code == 201
+
+    login_response = client.post("/auth/login", json={"email": email, "password": password})
+    assert login_response.status_code == 200
+
+    logout_response = client.post("/auth/logout")
+    assert logout_response.status_code == 204
+
+    me_response = client.get("/auth/me")
+    assert me_response.status_code == 401
