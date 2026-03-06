@@ -464,6 +464,11 @@ select {
   cursor: pointer;
 }
 
+.calendar-cell.today {
+  border-color: #6aa5d6;
+  box-shadow: inset 0 0 0 1px #9bc4e7;
+}
+
 .calendar-cell.outside {
   background: #edf4fa;
   color: #7e96a7;
@@ -507,6 +512,11 @@ select {
   background: #ffe0de;
 }
 
+.fixture-chip.locked {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
 .fixture-composer-overlay {
   position: fixed;
   inset: 0;
@@ -526,6 +536,16 @@ select {
   padding: 1rem;
   display: grid;
   gap: 0.55rem;
+}
+
+.fixture-venue-toggle {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.fixture-venue-toggle .button.is-selected {
+  background: #113f60;
+  color: #fff;
 }
 
 @media (max-width: 900px) {

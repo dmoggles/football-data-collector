@@ -52,6 +52,7 @@ import type {
 type AuthMode = "login" | "register";
 type Section = "dashboard" | "fixtures" | "teams" | "players" | "members" | "admin";
 type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
+type FixtureVenue = "home" | "away";
 
 const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"];
 const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
@@ -62,16 +63,22 @@ const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shor
   { id: "members", label: "Members", shortLabel: "M" },
 ];
 const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
-  { value: "5_aside", label: "5 aside" },
-  { value: "7_aside", label: "7 aside" },
-  { value: "9_aside", label: "9 aside" },
-  { value: "11_aside", label: "11 aside" },
+  { value: "5_aside", label: "5 Aside" },
+  { value: "7_aside", label: "7 Aside" },
+  { value: "9_aside", label: "9 Aside" },
+  { value: "11_aside", label: "11 Aside" },
 ];
 const FIXTURE_STATUS_OPTIONS = [
   { value: "scheduled", label: "Scheduled" },
   { value: "final", label: "Final" },
   { value: "cancelled", label: "Cancelled" },
 ];
+const KICKOFF_TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
+  const hours = String(Math.floor(index / 4)).padStart(2, "0");
+  const minutes = String((index % 4) * 15).padStart(2, "0");
+  const value = `${hours}:${minutes}`;
+  return { value, label: value };
+});
 const TEAM_MEMBER_ROLE_OPTIONS = [
   { value: "team_admin", label: "Admin" },
   { value: "data_enterer", label: "Data Enterer" },
@@ -112,6 +119,33 @@ function toLocalDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function fixtureFormatIcon(format: MatchFormat): string {
+  if (format === "5_aside") {
+    return "⚽5";
+  }
+  if (format === "7_aside") {
+    return "⚽7";
+  }
+  if (format === "9_aside") {
+    return "⚽9";
+  }
+  return "⚽11";
+}
+
+function toQuarterHourTime(date: Date): string {
+  const rounded = new Date(date);
+  const minutes = rounded.getMinutes();
+  const roundedMinutes = Math.round(minutes / 15) * 15;
+  if (roundedMinutes === 60) {
+    rounded.setHours(rounded.getHours() + 1, 0, 0, 0);
+  } else {
+    rounded.setMinutes(roundedMinutes, 0, 0);
+  }
+  const hours = String(rounded.getHours()).padStart(2, "0");
+  const mins = String(rounded.getMinutes()).padStart(2, "0");
+  return `${hours}:${mins}`;
+}
+
 type SearchableOption = {
   value: string;
   label: string;
@@ -134,6 +168,7 @@ function SearchableSelect({
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -156,6 +191,17 @@ function SearchableSelect({
     ? options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()))
     : options;
 
+  const selectOption = useCallback(
+    (nextValue: string) => {
+      const selected = options.find((option) => option.value === nextValue);
+      onChange(nextValue);
+      setQuery(selected?.label ?? "");
+      setIsOpen(false);
+      setActiveIndex(-1);
+    },
+    [onChange, options],
+  );
+
   return (
     <div className={`searchable-select ${disabled ? "disabled" : ""}`} ref={rootRef}>
       <input
@@ -163,14 +209,57 @@ function SearchableSelect({
         onFocus={() => {
           if (!disabled) {
             setIsOpen(true);
+            setActiveIndex(0);
           }
         }}
         onChange={(event) => {
           const nextQuery = event.target.value;
           setQuery(nextQuery);
           setIsOpen(true);
+          setActiveIndex(0);
           const exact = options.find((option) => option.label.toLowerCase() === nextQuery.trim().toLowerCase());
           onChange(exact?.value ?? "");
+        }}
+        onKeyDown={(event) => {
+          if (disabled) {
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            if (!isOpen) {
+              setIsOpen(true);
+              setActiveIndex(0);
+              return;
+            }
+            setActiveIndex((current) => Math.min(current + 1, filteredOptions.length - 1));
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            if (!isOpen) {
+              setIsOpen(true);
+              setActiveIndex(Math.max(filteredOptions.length - 1, 0));
+              return;
+            }
+            setActiveIndex((current) => Math.max(current - 1, 0));
+            return;
+          }
+          if (event.key === "Enter" && isOpen) {
+            event.preventDefault();
+            if (activeIndex >= 0 && filteredOptions[activeIndex]) {
+              selectOption(filteredOptions[activeIndex].value);
+            }
+            return;
+          }
+          if (event.key === "Escape") {
+            setIsOpen(false);
+            setActiveIndex(-1);
+            return;
+          }
+          if (event.key === "Tab") {
+            setIsOpen(false);
+            setActiveIndex(-1);
+          }
         }}
         placeholder={placeholder}
         disabled={disabled}
@@ -178,16 +267,15 @@ function SearchableSelect({
       {isOpen && !disabled ? (
         <div className="searchable-select-menu">
           {filteredOptions.length === 0 ? <p className="searchable-select-empty">No matches</p> : null}
-          {filteredOptions.map((option) => (
+          {filteredOptions.map((option, index) => (
             <button
-              className={`searchable-select-option ${option.value === value ? "active" : ""}`}
+              className={`searchable-select-option ${
+                option.value === value || index === activeIndex ? "active" : ""
+              }`}
               key={option.value}
               type="button"
-              onClick={() => {
-                onChange(option.value);
-                setQuery(option.label);
-                setIsOpen(false);
-              }}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => selectOption(option.value)}
             >
               {option.label}
             </button>
@@ -224,7 +312,9 @@ function App() {
   const [fixtureTeamId, setFixtureTeamId] = useState("");
   const [fixtureOpponentTeamId, setFixtureOpponentTeamId] = useState("");
   const [fixtureFormat, setFixtureFormat] = useState<MatchFormat>("11_aside");
-  const [fixtureKickoff, setFixtureKickoff] = useState("");
+  const [fixtureVenue, setFixtureVenue] = useState<FixtureVenue>("home");
+  const [fixtureKickoffDate, setFixtureKickoffDate] = useState("");
+  const [fixtureKickoffTime, setFixtureKickoffTime] = useState("");
   const [fixtureStatus, setFixtureStatus] = useState("scheduled");
   const [editingFixtureId, setEditingFixtureId] = useState("");
   const [isFixtureComposerOpen, setIsFixtureComposerOpen] = useState(false);
@@ -648,7 +738,9 @@ function App() {
   const resetFixtureForm = () => {
     setEditingFixtureId("");
     setFixtureFormat("11_aside");
-    setFixtureKickoff("");
+    setFixtureVenue("home");
+    setFixtureKickoffDate("");
+    setFixtureKickoffTime("");
     setFixtureStatus("scheduled");
     setFixtureOpponentTeamId("");
     setIsFixtureComposerOpen(false);
@@ -657,15 +749,15 @@ function App() {
   const openFixtureComposer = (date: Date | null = null) => {
     setEditingFixtureId("");
     setFixtureFormat("11_aside");
+    setFixtureVenue("home");
     setFixtureStatus("scheduled");
     setFixtureOpponentTeamId("");
     if (date) {
-      const local = new Date(date);
-      local.setHours(18, 0, 0, 0);
-      const offset = local.getTimezoneOffset();
-      setFixtureKickoff(new Date(local.getTime() - offset * 60_000).toISOString().slice(0, 16));
+      setFixtureKickoffDate(toLocalDateKey(date));
+      setFixtureKickoffTime("18:00");
     } else {
-      setFixtureKickoff("");
+      setFixtureKickoffDate("");
+      setFixtureKickoffTime("");
     }
     setIsFixtureComposerOpen(true);
   };
@@ -684,15 +776,22 @@ function App() {
       setError("Opposition team must be different");
       return;
     }
+    if (fixtureKickoffDate && !fixtureKickoffTime) {
+      setError("Select a kickoff time in 15-minute increments");
+      return;
+    }
 
     setError(null);
     setIsSubmitting(true);
     try {
+      const kickoffAt = fixtureKickoffDate
+        ? new Date(`${fixtureKickoffDate}T${fixtureKickoffTime}`).toISOString()
+        : null;
       const payload = {
-        home_team_id: fixtureTeamId,
-        away_team_id: fixtureOpponentTeamId,
+        home_team_id: fixtureVenue === "home" ? fixtureTeamId : fixtureOpponentTeamId,
+        away_team_id: fixtureVenue === "home" ? fixtureOpponentTeamId : fixtureTeamId,
         format: fixtureFormat,
-        kickoff_at: fixtureKickoff ? new Date(fixtureKickoff).toISOString() : null,
+        kickoff_at: kickoffAt,
         status: editingFixtureId ? fixtureStatus.trim() || "scheduled" : "scheduled",
       };
 
@@ -740,6 +839,7 @@ function App() {
   const startFixtureEdit = (fixture: Fixture) => {
     setEditingFixtureId(fixture.id);
     const selectedTeamIsHome = fixture.home_team_id === fixtureTeamId;
+    setFixtureVenue(selectedTeamIsHome ? "home" : "away");
     const oppositionTeamId = selectedTeamIsHome ? fixture.away_team_id : fixture.home_team_id;
     setFixtureOpponentTeamId(oppositionTeamId);
     setFixtureFormat(fixture.format);
@@ -749,12 +849,12 @@ function App() {
         : "scheduled",
     );
     if (fixture.kickoff_at) {
-      const date = new Date(fixture.kickoff_at);
-      const offset = date.getTimezoneOffset();
-      const localDate = new Date(date.getTime() - offset * 60_000);
-      setFixtureKickoff(localDate.toISOString().slice(0, 16));
+      const localDate = new Date(fixture.kickoff_at);
+      setFixtureKickoffDate(toLocalDateKey(localDate));
+      setFixtureKickoffTime(toQuarterHourTime(localDate));
     } else {
-      setFixtureKickoff("");
+      setFixtureKickoffDate("");
+      setFixtureKickoffTime("");
     }
     setIsFixtureComposerOpen(true);
   };
@@ -1360,6 +1460,13 @@ function App() {
                 <button
                   className="button secondary"
                   type="button"
+                  onClick={() => setFixtureCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+                >
+                  Today
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
                   onClick={() =>
                     setFixtureCalendarMonth(
                       (current) => new Date(current.getFullYear(), current.getMonth() + 1, 1),
@@ -1391,11 +1498,12 @@ function App() {
                 <div className="calendar-grid">
                   {calendarCells.map(({ date, inCurrentMonth }) => {
                     const dateKey = toLocalDateKey(date);
+                    const isToday = dateKey === toLocalDateKey(new Date());
                     const dayFixtures = fixturesByDateKey[dateKey] ?? [];
                     return (
                       <div
                         key={`${dateKey}-${inCurrentMonth ? "in" : "out"}`}
-                        className={`calendar-cell ${inCurrentMonth ? "" : "outside"}`}
+                        className={`calendar-cell ${inCurrentMonth ? "" : "outside"} ${isToday ? "today" : ""}`}
                         onClick={() => inCurrentMonth && openFixtureComposer(date)}
                         onKeyDown={(event) => {
                           if (!inCurrentMonth) {
@@ -1420,15 +1528,23 @@ function App() {
                               <button
                                 key={fixture.id}
                                 type="button"
-                                className={fixtureStatusClass(fixture.status)}
+                                className={`${fixtureStatusClass(fixture.status)} ${fixture.can_manage ? "" : "locked"}`}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   if (fixture.can_manage) {
                                     startFixtureEdit(fixture);
                                   }
                                 }}
-                                title={`${oppositionName}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+                                title={`${fixture.can_manage ? "" : "Locked · "} ${oppositionName}${
+                                  fixture.kickoff_at
+                                    ? ` · ${new Date(fixture.kickoff_at).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}`
+                                    : ""
+                                } · ${fixture.format.replace("_", " ")}`}
                               >
+                                {fixtureFormatIcon(fixture.format)}{" "}
                                 {fixture.kickoff_at
                                   ? new Date(fixture.kickoff_at).toLocaleTimeString([], {
                                       hour: "2-digit",
@@ -1436,6 +1552,7 @@ function App() {
                                     })
                                   : "TBD"}{" "}
                                 vs {oppositionName}
+                                {!fixture.can_manage ? " 🔒" : ""}
                               </button>
                             );
                           })}
@@ -1452,6 +1569,22 @@ function App() {
                 <form className="fixture-composer" onSubmit={handleCreateOrUpdateFixture}>
                   <h3>{editingFixtureId ? "Edit Fixture" : "Add Fixture"}</h3>
                   <p className="muted">{selectedFixtureTeamName}</p>
+                  <div className="fixture-venue-toggle" role="group" aria-label="Fixture venue">
+                    <button
+                      className={`button secondary ${fixtureVenue === "home" ? "is-selected" : ""}`}
+                      type="button"
+                      onClick={() => setFixtureVenue("home")}
+                    >
+                      Home
+                    </button>
+                    <button
+                      className={`button secondary ${fixtureVenue === "away" ? "is-selected" : ""}`}
+                      type="button"
+                      onClick={() => setFixtureVenue("away")}
+                    >
+                      Away
+                    </button>
+                  </div>
                   <SearchableSelect
                     value={fixtureOpponentTeamId}
                     onChange={(nextValue) => setFixtureOpponentTeamId(nextValue)}
@@ -1461,18 +1594,40 @@ function App() {
                     }))}
                     placeholder="Select opposition team"
                   />
-                  <SearchableSelect
+                  <select
                     value={fixtureFormat}
-                    options={MATCH_FORMAT_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-                    onChange={(nextValue) => setFixtureFormat(nextValue as MatchFormat)}
-                    placeholder="Select fixture format"
-                  />
-                  <input
-                    type="datetime-local"
-                    value={fixtureKickoff}
-                    onChange={(event) => setFixtureKickoff(event.target.value)}
-                    step={900}
-                  />
+                    onChange={(event) => setFixtureFormat(event.target.value as MatchFormat)}
+                  >
+                    {MATCH_FORMAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="member-actions">
+                    <input
+                      type="date"
+                      value={fixtureKickoffDate}
+                      onChange={(event) => {
+                        setFixtureKickoffDate(event.target.value);
+                        if (event.target.value && !fixtureKickoffTime) {
+                          setFixtureKickoffTime("18:00");
+                        }
+                      }}
+                    />
+                    <select
+                      value={fixtureKickoffTime}
+                      onChange={(event) => setFixtureKickoffTime(event.target.value)}
+                      disabled={!fixtureKickoffDate}
+                    >
+                      <option value="">Time</option>
+                      {KICKOFF_TIME_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <SearchableSelect
                     value={fixtureStatus}
                     options={FIXTURE_STATUS_OPTIONS}
