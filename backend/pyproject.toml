@@ -1,7 +1,7 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Backend API for Football Data Collector"
+description = "Backend API for TapLine"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.4",

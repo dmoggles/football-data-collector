@@ -25,10 +25,10 @@ docker compose up -d mysql
 ```
 
 This starts MySQL with:
-- Dev DB: `football_data_collector_dev`
-- Test DB: `football_data_collector_test`
-- User: `football_app`
-- Password: `football_app_password`
+- Dev DB: `tapline_dev`
+- Test DB: `tapline_test`
+- User: `tapline_app`
+- Password: `tapline_app_password`
 
 ### 2. Configure backend env
 

@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS football_data_collector_test;
+CREATE DATABASE IF NOT EXISTS tapline_test;
 
-GRANT ALL PRIVILEGES ON football_data_collector_dev.* TO 'football_app'@'%';
-GRANT ALL PRIVILEGES ON football_data_collector_test.* TO 'football_app'@'%';
+GRANT ALL PRIVILEGES ON tapline_dev.* TO 'tapline_app'@'%';
+GRANT ALL PRIVILEGES ON tapline_test.* TO 'tapline_app'@'%';
 FLUSH PRIVILEGES;

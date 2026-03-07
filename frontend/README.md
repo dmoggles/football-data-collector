@@ -1,6 +1,6 @@
 # Frontend
 
-React + Vite frontend for Football Data Collector.
+React + Vite frontend for TapLine.
 
 ## Development
 1. Install dependencies:

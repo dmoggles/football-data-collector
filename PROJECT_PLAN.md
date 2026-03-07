@@ -1,4 +1,4 @@
-# Football Data Collector - Project Plan
+# TapLine - Project Plan
 
 ## Goal
 Build a web app for fast football event collection during live matches, with user-specific data, secure authentication, and minimal friction match-day workflows.

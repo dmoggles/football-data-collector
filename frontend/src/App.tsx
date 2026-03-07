@@ -1683,7 +1683,10 @@ function App() {
     return (
       <main className="auth-shell">
         <section className="auth-panel">
-          <h1>Football Data Collector</h1>
+          <div className="brand-lockup">
+            <img src="/assets/branding/logo1.png" alt="TapLine logo" className="brand-logo" />
+            <h1>TapLine</h1>
+          </div>
           <p>Loading session...</p>
         </section>
       </main>
@@ -1694,7 +1697,10 @@ function App() {
     return (
       <main className="auth-shell">
         <section className="auth-panel">
-          <h1>Football Data Collector</h1>
+          <div className="brand-lockup">
+            <img src="/assets/branding/logo1.png" alt="TapLine logo" className="brand-logo" />
+            <h1>TapLine</h1>
+          </div>
           <p>Fast match-day collection with account-based workspaces.</p>
 
           {error ? <p className="error-banner">{error}</p> : null}
@@ -1758,7 +1764,11 @@ function App() {
           >
             {sidebarCollapsed ? ">" : "<"}
           </button>
-          {!sidebarCollapsed ? <h2>Workspace</h2> : null}
+          {!sidebarCollapsed ? (
+            <div className="sidebar-brand">
+              <img src="/assets/branding/logo1.png" alt="TapLine logo" className="sidebar-brand-logo" />
+            </div>
+          ) : null}
         </div>
 
         <nav className="sidebar-nav">
@@ -1799,9 +1809,12 @@ function App() {
 
       <section className="content-shell">
         <header className="content-header">
-          <div>
-            <h1>Football Data Collector</h1>
+          <div className="content-brand">
+            <img src="/assets/branding/logo1.png" alt="TapLine logo" className="content-brand-logo" />
+            <div>
+            <h1>TapLine</h1>
             <p className="muted">{isWorkspaceLoading ? "Refreshing data..." : "Ready"}</p>
+            </div>
           </div>
           <button className="button secondary" onClick={handleLogout} disabled={isSubmitting}>
             Log Out
@@ -2337,6 +2350,7 @@ function App() {
                       }}
                     >
                       <h4>Bench</h4>
+                      <p className="muted">Tip: Double-click a bench player to move them out of squad.</p>
                       {matchPrepBenchPlayers.length === 0 ? <p className="muted">Drop players here</p> : null}
                       <div className="prep-player-grid">
                         {matchPrepBenchPlayers.map((player) => (

@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI backend for Football Data Collector.
+FastAPI backend for TapLine.
 
 ## Setup
 1. Copy `.env.example` to `.env` and update MySQL credentials.

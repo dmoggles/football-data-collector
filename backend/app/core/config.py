@@ -5,19 +5,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Football Data Collector API"
+    app_name: str = "TapLine API"
     app_env: str = "development"
     app_debug: bool = True
 
     mysql_host: str = "127.0.0.1"
     mysql_port: int = 3306
-    mysql_user: str = "football_app"
-    mysql_password: str = "football_app_password"
-    mysql_database: str = "football_data_collector_dev"
-    mysql_test_database: str = "football_data_collector_test"
+    mysql_user: str = "tapline_app"
+    mysql_password: str = "tapline_app_password"
+    mysql_database: str = "tapline_dev"
+    mysql_test_database: str = "tapline_test"
     mysql_pool_pre_ping: bool = True
 
-    session_cookie_name: str = "fdc_session"
+    session_cookie_name: str = "tapline_session"
     session_expiry_hours: int = Field(default=24, ge=1)
     session_secure_cookies: bool = False
 
