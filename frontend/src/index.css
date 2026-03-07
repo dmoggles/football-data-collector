@@ -834,6 +834,56 @@ select {
   opacity: 0.78;
 }
 
+.prep-substitution-planner {
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--tl-border);
+  padding-top: 0.8rem;
+}
+
+.prep-segment-card {
+  border: 1px solid var(--tl-border-soft);
+  border-radius: 0.7rem;
+  background: rgba(20, 32, 43, 0.9);
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.prep-segment-minute-input {
+  width: 120px;
+}
+
+.prep-swap-row .searchable-select {
+  min-width: 220px;
+}
+
+.prep-swap-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.prep-swap-row .muted {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.match-prep-segment-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.match-prep-segment-nav .button {
+  min-width: 2.2rem;
+  padding: 0.35rem 0.55rem;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;

@@ -190,6 +190,13 @@ export async function upsertMatchPrepPlan(payload: {
     is_starting: boolean;
     lineup_slot: string | null;
   }>;
+  substitution_segments: Array<{
+    end_minute: number;
+    substitutions: Array<{
+      player_out_id: string;
+      player_in_id: string;
+    }>;
+  }>;
 }): Promise<MatchPrepPlan> {
   return request<MatchPrepPlan>("/match-prep/plan", "PUT", payload);
 }

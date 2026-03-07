@@ -158,12 +158,29 @@ export type MatchPrepPlayerSelection = {
   lineup_slot: string | null;
 };
 
+export type MatchPrepSubstitutionSwap = {
+  player_out_id: string;
+  player_out_name: string;
+  player_out_shirt_number: number | null;
+  player_in_id: string;
+  player_in_name: string;
+  player_in_shirt_number: number | null;
+};
+
+export type MatchPrepSubstitutionSegment = {
+  segment_index: number;
+  end_minute: number;
+  substitutions: MatchPrepSubstitutionSwap[];
+};
+
 export type MatchPrepPlan = {
   match_id: string;
   team_id: string;
   formation: string;
   format: MatchFormat;
+  total_match_minutes: number;
   required_starting_count: number;
   formation_options: string[];
   players: MatchPrepPlayerSelection[];
+  substitution_segments: MatchPrepSubstitutionSegment[];
 };

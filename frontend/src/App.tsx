@@ -416,6 +416,7 @@ function App() {
 
   const [selectedFixtureForMatchPrep, setSelectedFixtureForMatchPrep] = useState("");
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
+  const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
 
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>("data_enterer");
@@ -454,7 +455,7 @@ function App() {
     () => (matchPrepPlan ? getFormationSlots(matchPrepPlan.format, matchPrepPlan.formation) : []),
     [matchPrepPlan],
   );
-  const matchPrepPlayerBySlotId = useMemo(() => {
+  const matchPrepBasePlayerBySlotId = useMemo(() => {
     if (!matchPrepPlan) {
       return {} as Record<string, MatchPrepPlan["players"][number]>;
     }
@@ -466,6 +467,50 @@ function App() {
     }
     return mapping;
   }, [matchPrepPlan]);
+  const matchPrepPlayerBySlotId = useMemo(() => {
+    if (!matchPrepPlan) {
+      return {} as Record<string, MatchPrepPlan["players"][number]>;
+    }
+
+    const playersById: Record<string, MatchPrepPlan["players"][number]> = {};
+    for (const player of matchPrepPlan.players) {
+      playersById[player.player_id] = player;
+    }
+
+    const slotToPlayerId: Record<string, string> = {};
+    const playerToSlotId: Record<string, string> = {};
+    for (const [slotId, player] of Object.entries(matchPrepBasePlayerBySlotId)) {
+      slotToPlayerId[slotId] = player.player_id;
+      playerToSlotId[player.player_id] = slotId;
+    }
+
+    const swapsToApply = matchPrepPlan.substitution_segments
+      .slice(0, Math.max(0, activeMatchPrepSegmentIndex))
+      .flatMap((segment) => segment.substitutions);
+
+    for (const swap of swapsToApply) {
+      const outSlotId = playerToSlotId[swap.player_out_id];
+      if (!outSlotId) {
+        continue;
+      }
+      const existingInSlotId = playerToSlotId[swap.player_in_id];
+      if (existingInSlotId) {
+        delete slotToPlayerId[existingInSlotId];
+      }
+      delete playerToSlotId[swap.player_out_id];
+      slotToPlayerId[outSlotId] = swap.player_in_id;
+      playerToSlotId[swap.player_in_id] = outSlotId;
+    }
+
+    const mapping: Record<string, MatchPrepPlan["players"][number]> = {};
+    for (const [slotId, playerId] of Object.entries(slotToPlayerId)) {
+      const player = playersById[playerId];
+      if (player) {
+        mapping[slotId] = player;
+      }
+    }
+    return mapping;
+  }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan]);
   const matchPrepBenchPlayers = useMemo(
     () =>
       matchPrepPlan
@@ -846,6 +891,22 @@ function App() {
     if (!matchPrepPlan) {
       return;
     }
+    for (const segment of matchPrepPlan.substitution_segments) {
+      if (!Number.isInteger(segment.end_minute) || segment.end_minute < 1) {
+        setError("Each substitution segment must have a start minute of at least 1");
+        return;
+      }
+      if (segment.end_minute >= matchPrepPlan.total_match_minutes) {
+        setError(`Substitution segments must start before minute ${matchPrepPlan.total_match_minutes}`);
+        return;
+      }
+      for (const swap of segment.substitutions) {
+        if (!swap.player_out_id || !swap.player_in_id) {
+          setError("Each planned substitution must select both outgoing and incoming players");
+          return;
+        }
+      }
+    }
     setError(null);
     setIsSubmitting(true);
     try {
@@ -859,6 +920,13 @@ function App() {
           in_matchday_squad: player.is_available,
           is_starting: player.is_starting,
           lineup_slot: player.lineup_slot,
+        })),
+        substitution_segments: matchPrepPlan.substitution_segments.map((segment) => ({
+          end_minute: segment.end_minute,
+          substitutions: segment.substitutions.map((swap) => ({
+            player_out_id: swap.player_out_id,
+            player_in_id: swap.player_in_id,
+          })),
         })),
       });
       setMatchPrepPlan(saved);
@@ -947,6 +1015,136 @@ function App() {
     });
   };
 
+  const addMatchPrepSubstitutionSegment = () => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      const previousEndMinute =
+        current.substitution_segments[current.substitution_segments.length - 1]?.end_minute ?? 0;
+      const fallbackStartMinute = previousEndMinute > 0 ? previousEndMinute + 10 : 10;
+      const nextEndMinute = Math.min(current.total_match_minutes - 1, fallbackStartMinute);
+      if (nextEndMinute <= previousEndMinute) {
+        return current;
+      }
+      return {
+        ...current,
+        substitution_segments: [
+          ...current.substitution_segments,
+          {
+            segment_index: current.substitution_segments.length,
+            end_minute: nextEndMinute,
+            substitutions: [],
+          },
+        ],
+      };
+    });
+    setActiveMatchPrepSegmentIndex((current) => current + 1);
+  };
+
+  const updateMatchPrepSubstitutionSegmentEndMinute = (segmentIndex: number, endMinute: number) => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        substitution_segments: current.substitution_segments.map((segment, index) =>
+          index === segmentIndex
+            ? {
+                ...segment,
+                end_minute: Math.max(1, Math.min(current.total_match_minutes - 1, endMinute)),
+              }
+            : segment,
+        ),
+      };
+    });
+  };
+
+  const removeMatchPrepSubstitutionSegment = (segmentIndex: number) => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      const nextSegments = current.substitution_segments
+        .filter((_, index) => index !== segmentIndex)
+        .map((segment, index) => ({ ...segment, segment_index: index }));
+      return {
+        ...current,
+        substitution_segments: nextSegments,
+      };
+    });
+    setActiveMatchPrepSegmentIndex((current) => {
+      const removedDisplayIndex = segmentIndex + 1;
+      if (current < removedDisplayIndex) {
+        return current;
+      }
+      if (current === removedDisplayIndex) {
+        return Math.max(0, current - 1);
+      }
+      return current - 1;
+    });
+  };
+
+  const addOrReplaceMatchPrepPlannedSwap = (
+    segmentIndex: number,
+    playerOutId: string,
+    playerInId: string,
+  ) => {
+    if (!playerOutId || !playerInId || playerOutId === playerInId) {
+      return;
+    }
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      const playerOut = current.players.find((row) => row.player_id === playerOutId);
+      const playerIn = current.players.find((row) => row.player_id === playerInId);
+      if (!playerOut || !playerIn) {
+        return current;
+      }
+      return {
+        ...current,
+        substitution_segments: current.substitution_segments.map((segment, index) =>
+          index === segmentIndex
+            ? {
+                ...segment,
+                substitutions: [
+                  ...segment.substitutions.filter(
+                    (swap) => swap.player_out_id !== playerOutId && swap.player_in_id !== playerInId,
+                  ),
+                  {
+                    player_out_id: playerOut.player_id,
+                    player_out_name: playerOut.player_name,
+                    player_out_shirt_number: playerOut.shirt_number,
+                    player_in_id: playerIn.player_id,
+                    player_in_name: playerIn.player_name,
+                    player_in_shirt_number: playerIn.shirt_number,
+                  },
+                ],
+              }
+            : segment,
+        ),
+      };
+    });
+  };
+
+  const removeMatchPrepPlannedSwap = (segmentIndex: number, swapIndex: number) => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        substitution_segments: current.substitution_segments.map((segment, index) =>
+          index === segmentIndex
+            ? { ...segment, substitutions: segment.substitutions.filter((_, innerIndex) => innerIndex !== swapIndex) }
+            : segment,
+        ),
+      };
+    });
+  };
+
   const getDraggedPlayerId = (event: DragEvent<HTMLElement>): string => {
     return event.dataTransfer.getData("text/plain").trim();
   };
@@ -977,6 +1175,17 @@ function App() {
       assignMatchPrepPlayerToSlot(playerId, nearest.id);
     }
   };
+
+  useEffect(() => {
+    if (!matchPrepPlan) {
+      setActiveMatchPrepSegmentIndex(0);
+      return;
+    }
+    const totalSegments = matchPrepPlan.substitution_segments.length + 1;
+    if (activeMatchPrepSegmentIndex >= totalSegments) {
+      setActiveMatchPrepSegmentIndex(totalSegments - 1);
+    }
+  }, [activeMatchPrepSegmentIndex, matchPrepPlan]);
 
   const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2266,6 +2475,46 @@ function App() {
                 </p>
                 <div className="prep-layout">
                   <div className="pitch-card">
+                    {matchPrepPlan.substitution_segments.length > 0 ? (
+                      <div className="match-prep-segment-nav">
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={() =>
+                            setActiveMatchPrepSegmentIndex((current) => Math.max(0, current - 1))
+                          }
+                          disabled={activeMatchPrepSegmentIndex === 0}
+                        >
+                          ←
+                        </button>
+                        <span className="muted">
+                          Segment {activeMatchPrepSegmentIndex + 1} ·{" "}
+                          {activeMatchPrepSegmentIndex === 0
+                            ? `0' - ${
+                                matchPrepPlan.substitution_segments[0]?.end_minute ??
+                                matchPrepPlan.total_match_minutes
+                              }'`
+                            : `${matchPrepPlan.substitution_segments[activeMatchPrepSegmentIndex - 1]?.end_minute ?? 0}' - ${
+                                matchPrepPlan.substitution_segments[activeMatchPrepSegmentIndex]?.end_minute ??
+                                matchPrepPlan.total_match_minutes
+                              }'`}
+                        </span>
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={() =>
+                            setActiveMatchPrepSegmentIndex((current) =>
+                              Math.min(matchPrepPlan.substitution_segments.length, current + 1),
+                            )
+                          }
+                          disabled={
+                            activeMatchPrepSegmentIndex >= matchPrepPlan.substitution_segments.length
+                          }
+                        >
+                          →
+                        </button>
+                      </div>
+                    ) : null}
                     <PitchDiagram
                       format={matchPrepPlan.format}
                       onDragOver={(event) => event.preventDefault()}
@@ -2309,6 +2558,18 @@ function App() {
                               setMatchPrepDragTarget("");
                               const playerId = getDraggedPlayerId(event);
                               if (playerId) {
+                                if (
+                                  assignedPlayer &&
+                                  activeMatchPrepSegmentIndex > 0 &&
+                                  activeMatchPrepSegmentIndex <= matchPrepPlan.substitution_segments.length
+                                ) {
+                                  addOrReplaceMatchPrepPlannedSwap(
+                                    activeMatchPrepSegmentIndex - 1,
+                                    assignedPlayer.player_id,
+                                    playerId,
+                                  );
+                                  return;
+                                }
                                 assignMatchPrepPlayerToSlot(playerId, slot.id);
                               }
                             }}
@@ -2420,6 +2681,91 @@ function App() {
                       </div>
                     </div>
                   </div>
+                </div>
+                  <div className="stack-form prep-substitution-planner">
+                    <div className="member-actions">
+                      <h3>Substitution Planning</h3>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={addMatchPrepSubstitutionSegment}
+                      disabled={
+                        (matchPrepPlan.substitution_segments[
+                          matchPrepPlan.substitution_segments.length - 1
+                        ]?.end_minute ?? 0) >= matchPrepPlan.total_match_minutes - 1
+                      }
+                    >
+                      + Add Segment
+                    </button>
+                  </div>
+                  <p className="muted">
+                    Segment 1 is your starting lineup (minute 0). Add Segment 2+ with start minutes; each
+                    segment runs until the next segment starts (or minute {matchPrepPlan.total_match_minutes}).
+                  </p>
+                  {matchPrepPlan.substitution_segments.length === 0 ? (
+                    <p className="muted">No substitution segments yet.</p>
+                  ) : null}
+                  {matchPrepPlan.substitution_segments.map((segment, segmentIndex) => {
+                    return (
+                      <div className="prep-segment-card" key={`segment-${segmentIndex}`}>
+                        <div className="member-actions">
+                          <strong>Segment {segmentIndex + 2}</strong>
+                          <span className="muted">
+                            {segment.end_minute}&prime; -{" "}
+                            {matchPrepPlan.substitution_segments[segmentIndex + 1]?.end_minute ??
+                              matchPrepPlan.total_match_minutes}
+                            &prime;
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={matchPrepPlan.total_match_minutes - 1}
+                            value={segment.end_minute}
+                            onChange={(event) =>
+                              updateMatchPrepSubstitutionSegmentEndMinute(
+                                segmentIndex,
+                                Number(event.target.value || 0),
+                              )
+                            }
+                            placeholder="End minute"
+                            className="prep-segment-minute-input"
+                          />
+                          <button
+                            className="button secondary"
+                            type="button"
+                            onClick={() => setActiveMatchPrepSegmentIndex(segmentIndex + 1)}
+                          >
+                            Edit On Pitch
+                          </button>
+                          <button
+                            className="button secondary"
+                            type="button"
+                            onClick={() => removeMatchPrepSubstitutionSegment(segmentIndex)}
+                          >
+                            Remove Segment
+                          </button>
+                        </div>
+                        {segment.substitutions.length === 0 ? <p className="muted">No planned swaps yet.</p> : null}
+                        {segment.substitutions.map((swap, swapIndex) => (
+                          <div className="member-actions prep-swap-row" key={`segment-${segmentIndex}-swap-${swapIndex}`}>
+                            <button
+                              className="button secondary"
+                              type="button"
+                              onClick={() => removeMatchPrepPlannedSwap(segmentIndex, swapIndex)}
+                            >
+                              Remove
+                            </button>
+                            <span className="muted">
+                              {swap.player_out_name}
+                              {swap.player_out_shirt_number ? ` #${swap.player_out_shirt_number}` : ""} →{" "}
+                              {swap.player_in_name}
+                              {swap.player_in_shirt_number ? ` #${swap.player_in_shirt_number}` : ""}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, or_, select
@@ -11,26 +11,29 @@ from app.models.club import Club
 from app.models.match import Match
 from app.models.match_plan import MatchPlan
 from app.models.match_plan_player import MatchPlanPlayer
+from app.models.match_plan_substitution import MatchPlanSubstitution
+from app.models.match_plan_substitution_segment import MatchPlanSubstitutionSegment
 from app.models.player import Player
-from app.models.team import Team
 from app.models.user import User
+from app.schemas.match_prep import (
+    MatchPrepFixtureResponse,
+    MatchPrepPlanResponse,
+    MatchPrepPlanUpsertRequest,
+    MatchPrepPlayerSelectionResponse,
+    MatchPrepSubstitutionSegmentResponse,
+    MatchPrepSubstitutionSwapResponse,
+)
 from app.services.formations import (
     get_formation_options,
     get_required_starting_count,
     get_slot_ids,
     is_allowed_formation,
 )
-from app.schemas.match_prep import (
-    MatchPrepFixtureResponse,
-    MatchPrepPlanResponse,
-    MatchPrepPlanUpsertRequest,
-    MatchPrepPlayerSelectionResponse,
-)
 
 router = APIRouter(prefix="/match-prep", tags=["match-prep"])
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def get_match_or_404(db: Session, match_id: str) -> Match:
@@ -48,6 +51,16 @@ def ensure_match_contains_team(match: Match, team_id: str) -> None:
 def ensure_formation_valid(match_format: str, formation: str) -> None:
     if not is_allowed_formation(match_format, formation):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid formation for fixture format")
+
+
+def get_total_match_minutes(match: Match) -> int:
+    period_length = max(1, int(match.period_length_minutes))
+    period_format = (match.period_format or "").lower()
+    if period_format == "quarters":
+        return period_length * 4
+    if period_format == "halves":
+        return period_length * 2
+    return period_length
 
 
 def build_plan_response(db: Session, match: Match, team_id: str, plan: MatchPlan | None) -> MatchPrepPlanResponse:
@@ -72,6 +85,51 @@ def build_plan_response(db: Session, match: Match, team_id: str, plan: MatchPlan
         )
         for player in players
     ]
+    players_by_id = {player.id: player for player in players}
+
+    substitution_segment_responses: list[MatchPrepSubstitutionSegmentResponse] = []
+    if plan:
+        segments = db.scalars(
+            select(MatchPlanSubstitutionSegment)
+            .where(MatchPlanSubstitutionSegment.match_plan_id == plan.id)
+            .order_by(MatchPlanSubstitutionSegment.segment_order.asc())
+        ).all()
+        segment_ids = [segment.id for segment in segments]
+        substitutions_by_segment_id: dict[str, list[MatchPlanSubstitution]] = {}
+        if segment_ids:
+            substitutions = db.scalars(
+                select(MatchPlanSubstitution)
+                .where(MatchPlanSubstitution.segment_id.in_(segment_ids))
+                .order_by(MatchPlanSubstitution.created_at.asc())
+            ).all()
+            for row in substitutions:
+                substitutions_by_segment_id.setdefault(row.segment_id, []).append(row)
+
+        for segment in segments:
+            swaps: list[MatchPrepSubstitutionSwapResponse] = []
+            for swap in substitutions_by_segment_id.get(segment.id, []):
+                player_out = players_by_id.get(swap.player_out_id)
+                player_in = players_by_id.get(swap.player_in_id)
+                if not player_out or not player_in:
+                    continue
+                swaps.append(
+                    MatchPrepSubstitutionSwapResponse(
+                        player_out_id=player_out.id,
+                        player_out_name=player_out.display_name,
+                        player_out_shirt_number=player_out.shirt_number,
+                        player_in_id=player_in.id,
+                        player_in_name=player_in.display_name,
+                        player_in_shirt_number=player_in.shirt_number,
+                    )
+                )
+            substitution_segment_responses.append(
+                MatchPrepSubstitutionSegmentResponse(
+                    segment_index=segment.segment_order,
+                    end_minute=segment.end_minute,
+                    substitutions=swaps,
+                )
+            )
+
     formation_options = get_formation_options(match.format)
     default_formation = formation_options[0] if formation_options else ""
     return MatchPrepPlanResponse(
@@ -79,9 +137,11 @@ def build_plan_response(db: Session, match: Match, team_id: str, plan: MatchPlan
         team_id=team_id,
         formation=plan.formation if plan else default_formation,
         format=match.format,
+        total_match_minutes=get_total_match_minutes(match),
         required_starting_count=get_required_starting_count(match.format),
         formation_options=formation_options,
         players=player_responses,
+        substitution_segments=substitution_segment_responses,
     )
 
 
@@ -106,7 +166,7 @@ def list_upcoming_match_prep_fixtures(
     for match in rows:
         kickoff = match.kickoff_at
         if kickoff and kickoff.tzinfo is None:
-            kickoff = kickoff.replace(tzinfo=timezone.utc)
+            kickoff = kickoff.replace(tzinfo=UTC)
         if kickoff and kickoff < now and match.status.lower() in ["final", "cancelled"]:
             continue
 
@@ -188,6 +248,62 @@ def upsert_match_prep_plan(
             lineup_slot,
         )
 
+    total_match_minutes = get_total_match_minutes(match)
+    previous_segment_end_minute = 0
+    normalized_segments: list[tuple[int, list[tuple[str, str]]]] = []
+    for index, segment in enumerate(payload.substitution_segments):
+        if segment.end_minute <= previous_segment_end_minute:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Substitution segments must be in ascending end-minute order",
+            )
+        if segment.end_minute > total_match_minutes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Substitution segment cannot end after minute {total_match_minutes}",
+            )
+        previous_segment_end_minute = segment.end_minute
+
+        used_out_ids: set[str] = set()
+        used_in_ids: set[str] = set()
+        normalized_swaps: list[tuple[str, str]] = []
+        for swap in segment.substitutions:
+            player_out_id = swap.player_out_id
+            player_in_id = swap.player_in_id
+            if player_out_id not in valid_player_ids or player_in_id not in valid_player_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Substitution player does not belong to team",
+                )
+            if player_out_id == player_in_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Substitution in/out players must be different",
+                )
+            if player_out_id in used_out_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Same player cannot be subbed out twice in one segment",
+                )
+            if player_in_id in used_in_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Same player cannot be subbed in twice in one segment",
+                )
+
+            player_out_available = selections_by_player_id.get(player_out_id, (True, True, False, None))[0]
+            player_in_available = selections_by_player_id.get(player_in_id, (True, True, False, None))[0]
+            if not player_out_available or not player_in_available:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Substitution players must be available",
+                )
+
+            used_out_ids.add(player_out_id)
+            used_in_ids.add(player_in_id)
+            normalized_swaps.append((player_out_id, player_in_id))
+        normalized_segments.append((segment.end_minute, normalized_swaps))
+
     starting_count = sum(1 for _, _, is_starting, _ in selections_by_player_id.values() if is_starting)
     required_starting_count = get_required_starting_count(match.format)
     if starting_count > required_starting_count:
@@ -215,6 +331,12 @@ def upsert_match_prep_plan(
         plan.formation = payload.formation.strip()
 
     db.execute(delete(MatchPlanPlayer).where(MatchPlanPlayer.match_plan_id == plan.id))
+    segment_rows = db.scalars(
+        select(MatchPlanSubstitutionSegment.id).where(MatchPlanSubstitutionSegment.match_plan_id == plan.id)
+    ).all()
+    if segment_rows:
+        db.execute(delete(MatchPlanSubstitution).where(MatchPlanSubstitution.segment_id.in_(segment_rows)))
+    db.execute(delete(MatchPlanSubstitutionSegment).where(MatchPlanSubstitutionSegment.match_plan_id == plan.id))
     db.flush()
 
     for player_id, (is_available, in_squad, is_starting, lineup_slot) in selections_by_player_id.items():
@@ -228,6 +350,23 @@ def upsert_match_prep_plan(
                 lineup_slot=lineup_slot,
             )
         )
+
+    for segment_order, (end_minute, swaps) in enumerate(normalized_segments):
+        segment_row = MatchPlanSubstitutionSegment(
+            match_plan_id=plan.id,
+            segment_order=segment_order,
+            end_minute=end_minute,
+        )
+        db.add(segment_row)
+        db.flush()
+        for player_out_id, player_in_id in swaps:
+            db.add(
+                MatchPlanSubstitution(
+                    segment_id=segment_row.id,
+                    player_out_id=player_out_id,
+                    player_in_id=player_in_id,
+                )
+            )
     db.commit()
     db.refresh(plan)
     return build_plan_response(db, match, payload.team_id, plan)

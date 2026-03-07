@@ -75,8 +75,13 @@ def test_match_prep_plan_upsert_and_fetch() -> None:
         "/players",
         json={"team_id": team_id, "display_name": "Player Two", "shirt_number": 2, "position": "CB"},
     )
+    p3 = client.post(
+        "/players",
+        json={"team_id": team_id, "display_name": "Player Three", "shirt_number": 3, "position": "CM"},
+    )
     assert p1.status_code == 201
     assert p2.status_code == 201
+    assert p3.status_code == 201
 
     fixture = client.post(
         "/matches",
@@ -122,6 +127,24 @@ def test_match_prep_plan_upsert_and_fetch() -> None:
                     "is_starting": False,
                     "lineup_slot": None,
                 },
+                {
+                    "player_id": p3.json()["id"],
+                    "is_available": True,
+                    "in_matchday_squad": False,
+                    "is_starting": False,
+                    "lineup_slot": None,
+                },
+            ],
+            "substitution_segments": [
+                {
+                    "end_minute": 10,
+                    "substitutions": [
+                        {
+                            "player_out_id": p2.json()["id"],
+                            "player_in_id": p3.json()["id"],
+                        }
+                    ],
+                }
             ],
         },
     )
@@ -132,10 +155,15 @@ def test_match_prep_plan_upsert_and_fetch() -> None:
     )
     assert second_player["is_available"] is True
     assert second_player["in_matchday_squad"] is True
+    assert len(upsert.json()["substitution_segments"]) == 1
+    assert upsert.json()["substitution_segments"][0]["end_minute"] == 10
+    assert upsert.json()["substitution_segments"][0]["substitutions"][0]["player_out_id"] == p2.json()["id"]
+    assert upsert.json()["substitution_segments"][0]["substitutions"][0]["player_in_id"] == p3.json()["id"]
 
     get_plan_again = client.get(f"/match-prep/plan?match_id={fixture_id}&team_id={team_id}")
     assert get_plan_again.status_code == 200
     assert get_plan_again.json()["formation"] == "2-1-1"
+    assert len(get_plan_again.json()["substitution_segments"]) == 1
 
 
 def test_match_prep_rejects_invalid_lineup_slot() -> None:

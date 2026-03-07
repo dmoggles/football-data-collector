@@ -33,11 +33,37 @@ class MatchPrepPlayerSelectionResponse(BaseModel):
     lineup_slot: str | None
 
 
+class MatchPrepSubstitutionSwap(BaseModel):
+    player_out_id: str = Field(min_length=1, max_length=36)
+    player_in_id: str = Field(min_length=1, max_length=36)
+
+
+class MatchPrepSubstitutionSwapResponse(BaseModel):
+    player_out_id: str
+    player_out_name: str
+    player_out_shirt_number: int | None
+    player_in_id: str
+    player_in_name: str
+    player_in_shirt_number: int | None
+
+
+class MatchPrepSubstitutionSegment(BaseModel):
+    end_minute: int = Field(ge=1, le=300)
+    substitutions: list[MatchPrepSubstitutionSwap] = Field(default_factory=list)
+
+
+class MatchPrepSubstitutionSegmentResponse(BaseModel):
+    segment_index: int
+    end_minute: int
+    substitutions: list[MatchPrepSubstitutionSwapResponse]
+
+
 class MatchPrepPlanUpsertRequest(BaseModel):
     match_id: str = Field(min_length=1, max_length=36)
     team_id: str = Field(min_length=1, max_length=36)
     formation: str = Field(min_length=1, max_length=30)
     players: list[MatchPrepPlayerSelection]
+    substitution_segments: list[MatchPrepSubstitutionSegment] = Field(default_factory=list)
 
 
 class MatchPrepPlanResponse(BaseModel):
@@ -45,6 +71,8 @@ class MatchPrepPlanResponse(BaseModel):
     team_id: str
     formation: str
     format: str
+    total_match_minutes: int
     required_starting_count: int
     formation_options: list[str]
     players: list[MatchPrepPlayerSelectionResponse]
+    substitution_segments: list[MatchPrepSubstitutionSegmentResponse]
