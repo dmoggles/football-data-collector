@@ -69,8 +69,8 @@ const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shor
   { id: "dashboard", label: "Dashboard", shortLabel: "D" },
   { id: "fixtures", label: "Fixtures", shortLabel: "F" },
   { id: "match_prep", label: "Match Prep", shortLabel: "MP" },
-  { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "players", label: "Players", shortLabel: "P" },
+  { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "members", label: "Members", shortLabel: "M" },
 ];
 const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
@@ -499,6 +499,38 @@ function App() {
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
     [fixtures.length, players.length, teamMembers.length, teams.length],
   );
+  const nextMatchTile = useMemo(() => {
+    const now = Date.now();
+    const upcoming = fixtures
+      .filter((fixture) => fixture.status.toLowerCase() !== "cancelled")
+      .map((fixture) => {
+        const kickoff = fixture.kickoff_at ? new Date(fixture.kickoff_at) : null;
+        return { fixture, kickoff };
+      })
+      .filter(({ kickoff }) => kickoff && kickoff.getTime() >= now)
+      .sort((a, b) => (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0));
+
+    const next = upcoming[0];
+    if (!next || !next.kickoff) {
+      return { title: "No upcoming fixtures", subtitle: "Schedule a fixture to see it here." };
+    }
+
+    const fixture = next.fixture;
+    const selectedTeamIsHome = fixtureTeamId ? fixture.home_team_id === fixtureTeamId : true;
+    const opponent = selectedTeamIsHome
+      ? `${fixture.away_club_name} ${fixture.away_team_name}`
+      : `${fixture.home_club_name} ${fixture.home_team_name}`;
+    return {
+      title: opponent,
+      subtitle: next.kickoff.toLocaleString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+  }, [fixtureTeamId, fixtures]);
   const filteredAdminTeams = useMemo(() => {
     if (!adminOverview) {
       return [];
@@ -1821,6 +1853,11 @@ function App() {
               <article>
                 <h3>Members</h3>
                 <p>{dashboardStats.members}</p>
+              </article>
+              <article>
+                <h3>Next Match</h3>
+                <p>{nextMatchTile.title}</p>
+                <span className="muted">{nextMatchTile.subtitle}</span>
               </article>
             </div>
             <div className="stack-form" style={{ marginTop: "1rem" }}>

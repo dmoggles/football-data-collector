@@ -331,6 +331,12 @@ select {
   color: #123b59;
 }
 
+.stats-grid article .muted {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+}
+
 .two-col {
   display: grid;
   gap: 1rem;
