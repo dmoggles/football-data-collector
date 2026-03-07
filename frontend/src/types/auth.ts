@@ -135,3 +135,35 @@ export type FixturePayload = {
   kickoff_at: string | null;
   status: string;
 };
+
+export type MatchPrepFixture = {
+  id: string;
+  team_id: string;
+  team_name: string;
+  opponent_team_id: string;
+  opponent_team_name: string;
+  kickoff_at: string | null;
+  status: string;
+  format: MatchFormat;
+};
+
+export type MatchPrepPlayerSelection = {
+  player_id: string;
+  player_name: string;
+  shirt_number: number | null;
+  position: string | null;
+  is_available: boolean;
+  in_matchday_squad: boolean;
+  is_starting: boolean;
+  lineup_slot: string | null;
+};
+
+export type MatchPrepPlan = {
+  match_id: string;
+  team_id: string;
+  formation: string;
+  format: MatchFormat;
+  required_starting_count: number;
+  formation_options: string[];
+  players: MatchPrepPlayerSelection[];
+};

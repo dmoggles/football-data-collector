@@ -3,6 +3,8 @@ from app.models.club import Club
 from app.models.event import Event
 from app.models.global_role import GlobalRole
 from app.models.match import Match
+from app.models.match_plan import MatchPlan
+from app.models.match_plan_player import MatchPlanPlayer
 from app.models.match_squad import MatchSquad
 from app.models.parent_player_link import ParentPlayerLink
 from app.models.player import Player
@@ -17,6 +19,8 @@ __all__ = [
     "Event",
     "Club",
     "Match",
+    "MatchPlan",
+    "MatchPlanPlayer",
     "MatchSquad",
     "ParentPlayerLink",
     "Player",

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { DragEvent, FormEvent } from "react";
 
 import "./index.css";
+import { PitchDiagram } from "./components/PitchDiagram";
+import { getFormationSlots } from "./domain/formations";
+import type { FormationSlot } from "./domain/formations";
 import {
   addTeamMember,
   assignAdminTeamOwner,
@@ -20,8 +23,10 @@ import {
   deleteTeamMember,
   getAdminOverview,
   getAdminAuditLogs,
+  getMatchPrepPlan,
   getMe,
   listFixtures,
+  listMatchPrepFixtures,
   listPlayers,
   listTeamDirectory,
   listTeamMembers,
@@ -32,6 +37,7 @@ import {
   register,
   revokeUserGlobalRole,
   updateFixture,
+  upsertMatchPrepPlan,
   updatePlayer,
   updateAdminTeam,
   updateAdminClub,
@@ -42,6 +48,8 @@ import type {
   AdminOverview,
   Fixture,
   MatchFormat,
+  MatchPrepFixture,
+  MatchPrepPlan,
   MatchPeriodFormat,
   Player,
   Team,
@@ -52,7 +60,7 @@ import type {
 } from "./types/auth";
 
 type AuthMode = "login" | "register";
-type Section = "dashboard" | "fixtures" | "teams" | "players" | "members" | "admin";
+type Section = "dashboard" | "fixtures" | "match_prep" | "teams" | "players" | "members" | "admin";
 type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
 type FixtureVenue = "home" | "away";
 
@@ -60,6 +68,7 @@ const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM"
 const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
   { id: "dashboard", label: "Dashboard", shortLabel: "D" },
   { id: "fixtures", label: "Fixtures", shortLabel: "F" },
+  { id: "match_prep", label: "Match Prep", shortLabel: "MP" },
   { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "players", label: "Players", shortLabel: "P" },
   { id: "members", label: "Members", shortLabel: "M" },
@@ -168,6 +177,47 @@ function timeToMinutes(timeValue: string): number | null {
     return null;
   }
   return hours * 60 + minutes;
+}
+
+function normalizeRoleCode(role: string): string {
+  return role.trim().toUpperCase();
+}
+
+function parsePlayerPositionCodes(position: string | null): string[] {
+  if (!position) {
+    return [];
+  }
+  return position
+    .split(/[,\|/]/)
+    .map((item) => normalizeRoleCode(item))
+    .filter(Boolean);
+}
+
+function isPositionMismatch(playerPosition: string | null, slotRole: string): boolean {
+  const playerRoles = parsePlayerPositionCodes(playerPosition);
+  if (playerRoles.length === 0) {
+    return false;
+  }
+
+  const normalizedSlotRole = normalizeRoleCode(slotRole);
+  if (playerRoles.includes(normalizedSlotRole)) {
+    return false;
+  }
+
+  const aliasGroups: string[][] = [
+    ["CB", "LCB", "RCB"],
+    ["ST", "CF"],
+    ["LM", "LW"],
+    ["RM", "RW"],
+    ["LB", "LWB"],
+    ["RB", "RWB"],
+  ];
+  for (const group of aliasGroups) {
+    if (group.includes(normalizedSlotRole) && playerRoles.some((role) => group.includes(role))) {
+      return false;
+    }
+  }
+  return true;
 }
 
 type SearchableOption = {
@@ -328,6 +378,8 @@ function App() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamDirectory, setTeamDirectory] = useState<TeamDirectory[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  const [matchPrepFixtures, setMatchPrepFixtures] = useState<MatchPrepFixture[]>([]);
+  const [matchPrepPlan, setMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
@@ -361,6 +413,9 @@ function App() {
 
   const [selectedTeamForPlayers, setSelectedTeamForPlayers] = useState("");
   const [selectedTeamForMembers, setSelectedTeamForMembers] = useState("");
+  const [selectedTeamForMatchPrep, setSelectedTeamForMatchPrep] = useState("");
+  const [selectedFixtureForMatchPrep, setSelectedFixtureForMatchPrep] = useState("");
+  const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
 
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>("data_enterer");
@@ -399,6 +454,38 @@ function App() {
   const selectedTeamForMembersName = useMemo(
     () => teams.find((team) => team.id === selectedTeamForMembers)?.display_name ?? "",
     [selectedTeamForMembers, teams],
+  );
+  const selectedTeamForMatchPrepName = useMemo(
+    () => teams.find((team) => team.id === selectedTeamForMatchPrep)?.display_name ?? "",
+    [selectedTeamForMatchPrep, teams],
+  );
+  const matchPrepSlots = useMemo(
+    () => (matchPrepPlan ? getFormationSlots(matchPrepPlan.format, matchPrepPlan.formation) : []),
+    [matchPrepPlan],
+  );
+  const matchPrepPlayerBySlotId = useMemo(() => {
+    if (!matchPrepPlan) {
+      return {} as Record<string, MatchPrepPlan["players"][number]>;
+    }
+    const mapping: Record<string, MatchPrepPlan["players"][number]> = {};
+    for (const player of matchPrepPlan.players) {
+      if (player.lineup_slot) {
+        mapping[player.lineup_slot] = player;
+      }
+    }
+    return mapping;
+  }, [matchPrepPlan]);
+  const matchPrepBenchPlayers = useMemo(
+    () =>
+      matchPrepPlan
+        ? matchPrepPlan.players.filter((player) => player.is_available && !player.lineup_slot)
+        : [],
+    [matchPrepPlan],
+  );
+  const matchPrepUnavailablePlayers = useMemo(
+    () =>
+      matchPrepPlan ? matchPrepPlan.players.filter((player) => !player.is_available && !player.lineup_slot) : [],
+    [matchPrepPlan],
   );
 
   const playersForSelectedTeam = useMemo(() => {
@@ -572,6 +659,11 @@ function App() {
       setPlayers(playersResponse);
       setSelectedTeamForPlayers((current) => current || teamsResponse[0]?.id || "");
       setSelectedTeamForMembers((current) => current || teamsResponse[0]?.id || "");
+      setSelectedTeamForMatchPrep((current) =>
+        ownedTeamIds.has(current)
+          ? current
+          : teamsResponse.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id || "",
+      );
       setFixtureTeamId(nextFixtureTeamId);
     } finally {
       setIsWorkspaceLoading(false);
@@ -614,6 +706,29 @@ function App() {
     } finally {
       setIsMembersLoading(false);
     }
+  }, []);
+
+  const loadMatchPrepFixtures = useCallback(async (teamId: string) => {
+    if (!teamId) {
+      setMatchPrepFixtures([]);
+      setSelectedFixtureForMatchPrep("");
+      setMatchPrepPlan(null);
+      return;
+    }
+    const rows = await listMatchPrepFixtures(teamId);
+    setMatchPrepFixtures(rows);
+    setSelectedFixtureForMatchPrep((current) =>
+      rows.some((fixture) => fixture.id === current) ? current : rows[0]?.id || "",
+    );
+  }, []);
+
+  const loadMatchPrepPlan = useCallback(async (matchId: string, teamId: string) => {
+    if (!matchId || !teamId) {
+      setMatchPrepPlan(null);
+      return;
+    }
+    const plan = await getMatchPrepPlan(matchId, teamId);
+    setMatchPrepPlan(plan);
   }, []);
 
   const loadAdminData = useCallback(async () => {
@@ -672,6 +787,38 @@ function App() {
   }, [loadTeamMembers, section, selectedTeamForMembers, selectedTeamForMembersCanManage, user]);
 
   useEffect(() => {
+    if (ownedTeams.length === 0) {
+      setSelectedTeamForMatchPrep("");
+      setSelectedFixtureForMatchPrep("");
+      setMatchPrepPlan(null);
+      return;
+    }
+    if (ownedTeams.every((team) => team.id !== selectedTeamForMatchPrep)) {
+      setSelectedTeamForMatchPrep(ownedTeams[0].id);
+      setSelectedFixtureForMatchPrep("");
+      setMatchPrepPlan(null);
+    }
+  }, [ownedTeams, selectedTeamForMatchPrep]);
+
+  useEffect(() => {
+    if (!user || section !== "match_prep") {
+      return;
+    }
+    void loadMatchPrepFixtures(selectedTeamForMatchPrep);
+  }, [loadMatchPrepFixtures, section, selectedTeamForMatchPrep, user]);
+
+  useEffect(() => {
+    if (!user || section !== "match_prep") {
+      return;
+    }
+    if (!selectedFixtureForMatchPrep || !selectedTeamForMatchPrep) {
+      setMatchPrepPlan(null);
+      return;
+    }
+    void loadMatchPrepPlan(selectedFixtureForMatchPrep, selectedTeamForMatchPrep);
+  }, [loadMatchPrepPlan, section, selectedFixtureForMatchPrep, selectedTeamForMatchPrep, user]);
+
+  useEffect(() => {
     if (!user || !fixtureTeamId) {
       return;
     }
@@ -691,6 +838,142 @@ function App() {
         ? current.filter((item) => item !== positionCode)
         : [...current, positionCode],
     );
+  };
+
+  const handleSaveMatchPrepPlan = async () => {
+    if (!matchPrepPlan) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const saved = await upsertMatchPrepPlan({
+        match_id: matchPrepPlan.match_id,
+        team_id: matchPrepPlan.team_id,
+        formation: matchPrepPlan.formation,
+        players: matchPrepPlan.players.map((player) => ({
+          player_id: player.player_id,
+          is_available: player.is_available,
+          in_matchday_squad: player.is_available,
+          is_starting: player.is_starting,
+          lineup_slot: player.lineup_slot,
+        })),
+      });
+      setMatchPrepPlan(saved);
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to save match prep plan");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const assignMatchPrepPlayerToSlot = (playerId: string, slotId: string) => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        players: current.players.map((player) => {
+          if (player.player_id === playerId) {
+            return {
+              ...player,
+              is_available: true,
+              in_matchday_squad: true,
+              is_starting: true,
+              lineup_slot: slotId,
+            };
+          }
+          if (player.lineup_slot === slotId) {
+            return {
+              ...player,
+              is_starting: false,
+              lineup_slot: null,
+            };
+          }
+          return player;
+        }),
+      };
+    });
+  };
+
+  const moveMatchPrepPlayerToBench = (playerId: string) => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        players: current.players.map((player) =>
+          player.player_id === playerId
+            ? {
+                ...player,
+                is_available: true,
+                in_matchday_squad: true,
+                is_starting: false,
+                lineup_slot: null,
+              }
+            : player,
+        ),
+      };
+    });
+  };
+
+  const moveMatchPrepPlayerOutOfSquad = (playerId: string) => {
+    setMatchPrepPlan((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        players: current.players.map((player) =>
+          player.player_id === playerId
+            ? {
+                ...player,
+                is_available: false,
+                in_matchday_squad: false,
+                is_starting: false,
+                lineup_slot: null,
+              }
+            : player,
+        ),
+      };
+    });
+  };
+
+  const getDraggedPlayerId = (event: DragEvent<HTMLElement>): string => {
+    return event.dataTransfer.getData("text/plain").trim();
+  };
+
+  const assignMatchPrepPlayerToNearestSlot = (
+    event: DragEvent<HTMLDivElement>,
+    slots: FormationSlot[],
+  ) => {
+    const playerId = getDraggedPlayerId(event);
+    if (!playerId || slots.length === 0) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const xPercent = ((event.clientX - rect.left) / rect.width) * 100;
+    const yPercent = ((event.clientY - rect.top) / rect.height) * 100;
+
+    const nearest = slots.reduce<{ id: string; distance: number } | null>((closest, slot) => {
+      const dx = slot.x - xPercent;
+      const dy = slot.y - yPercent;
+      const distance = dx * dx + dy * dy;
+      if (!closest || distance < closest.distance) {
+        return { id: slot.id, distance };
+      }
+      return closest;
+    }, null);
+
+    if (nearest) {
+      assignMatchPrepPlayerToSlot(playerId, nearest.id);
+    }
   };
 
   const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -776,6 +1059,7 @@ function App() {
       );
       setSelectedTeamForPlayers(created.id);
       setSelectedTeamForMembers(created.id);
+      setSelectedTeamForMatchPrep((current) => current || created.id);
       setFixtureTeamId((current) => current || created.id);
     } catch (requestError) {
       if (requestError instanceof Error) {
@@ -812,6 +1096,12 @@ function App() {
         setFixtureTeamId(nextOwned);
         setFixtures([]);
         resetFixtureForm();
+      }
+      if (selectedTeamForMatchPrep === teamId) {
+        const nextOwned = remainingTeams.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id ?? "";
+        setSelectedTeamForMatchPrep(nextOwned);
+        setSelectedFixtureForMatchPrep("");
+        setMatchPrepPlan(null);
       }
     } catch (requestError) {
       if (requestError instanceof Error) {
@@ -1876,6 +2166,245 @@ function App() {
                 </div>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {section === "match_prep" ? (
+          <section className="section-card">
+            <div className="player-toolbar">
+              <SearchableSelect
+                value={selectedTeamForMatchPrep}
+                onChange={(nextValue) => {
+                  setSelectedTeamForMatchPrep(nextValue);
+                  setSelectedFixtureForMatchPrep("");
+                  setMatchPrepPlan(null);
+                }}
+                options={ownedTeams.map((team) => ({ value: team.id, label: team.display_name }))}
+                placeholder="Select team"
+              />
+              <button
+                className="button primary"
+                type="button"
+                disabled={isSubmitting || !matchPrepPlan}
+                onClick={handleSaveMatchPrepPlan}
+              >
+                Save Match Plan
+              </button>
+            </div>
+            {ownedTeams.length === 0 ? (
+              <p className="muted">No team admin access yet. Ask a super admin to assign you to a team.</p>
+            ) : null}
+            {!selectedTeamForMatchPrep && ownedTeams.length > 0 ? (
+              <p className="muted">Select a team to start match prep.</p>
+            ) : null}
+            <div className="stack-form" style={{ marginTop: "0.6rem" }}>
+              <SearchableSelect
+                value={selectedFixtureForMatchPrep}
+                onChange={setSelectedFixtureForMatchPrep}
+                options={matchPrepFixtures.map((fixture) => ({
+                  value: fixture.id,
+                  label: `${fixture.opponent_team_name}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleString()}` : ""}`,
+                }))}
+                placeholder="Select upcoming fixture"
+                disabled={!selectedTeamForMatchPrep}
+              />
+            </div>
+            {!selectedFixtureForMatchPrep && selectedTeamForMatchPrep ? (
+              <p className="muted">No upcoming fixtures for {selectedTeamForMatchPrepName}.</p>
+            ) : null}
+            {matchPrepPlan ? (
+              <div className="stack-form" style={{ marginTop: "0.8rem" }}>
+                <div className="member-actions">
+                  <span className="muted">Formation</span>
+                  <select
+                    value={matchPrepPlan.formation}
+                    onChange={(event) => {
+                      const nextFormation = event.target.value;
+                      const nextSlotIds = new Set(getFormationSlots(matchPrepPlan.format, nextFormation).map((slot) => slot.id));
+                      setMatchPrepPlan((current) =>
+                        current
+                          ? {
+                              ...current,
+                              formation: nextFormation,
+                              players: current.players.map((player) =>
+                                player.lineup_slot && !nextSlotIds.has(player.lineup_slot)
+                                  ? { ...player, lineup_slot: null, is_starting: false }
+                                  : player,
+                              ),
+                            }
+                          : current,
+                      );
+                    }}
+                  >
+                    {matchPrepPlan.formation_options.map((formation) => (
+                      <option key={formation} value={formation}>
+                        {formation}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="muted">
+                  Starting selected: {matchPrepPlan.players.filter((player) => player.is_starting).length}/
+                  {matchPrepPlan.required_starting_count} · Format {matchPrepPlan.format.replace("_", " ")}
+                </p>
+                <div className="prep-layout">
+                  <div className="pitch-card">
+                    <PitchDiagram
+                      format={matchPrepPlan.format}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("");
+                        assignMatchPrepPlayerToNearestSlot(event, matchPrepSlots);
+                      }}
+                    >
+                      {matchPrepSlots.map((slot) => {
+                        const assignedPlayer = matchPrepPlayerBySlotId[slot.id];
+                        const mismatch = assignedPlayer
+                          ? isPositionMismatch(assignedPlayer.position, slot.role)
+                          : false;
+                        return (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            className={`pitch-slot ${assignedPlayer ? "filled" : "empty"} ${
+                              mismatch ? "mismatch" : ""
+                            } ${
+                              matchPrepDragTarget === slot.id ? "drag-over" : ""
+                            }`}
+                            style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
+                            onDoubleClick={() => {
+                              if (assignedPlayer) {
+                                moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                              }
+                            }}
+                            onDragEnter={(event) => {
+                              event.preventDefault();
+                              setMatchPrepDragTarget(slot.id);
+                            }}
+                            onDragOver={(event) => {
+                              event.preventDefault();
+                              setMatchPrepDragTarget(slot.id);
+                            }}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setMatchPrepDragTarget("");
+                              const playerId = getDraggedPlayerId(event);
+                              if (playerId) {
+                                assignMatchPrepPlayerToSlot(playerId, slot.id);
+                              }
+                            }}
+                          >
+                            <span className="pitch-slot-label">
+                              {slot.label}
+                              {assignedPlayer?.shirt_number ? ` #${assignedPlayer.shirt_number}` : ""}
+                            </span>
+                            {assignedPlayer ? (
+                              <span className="pitch-slot-player">
+                                {assignedPlayer.player_name}
+                              </span>
+                            ) : (
+                              <span className="pitch-slot-player muted">Drop Player</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </PitchDiagram>
+                  </div>
+                  <div className="prep-side">
+                    <div
+                      className={`prep-dropzone ${matchPrepDragTarget === "bench" ? "drag-over" : ""}`}
+                      onDragEnter={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("bench");
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("bench");
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("");
+                        const playerId = getDraggedPlayerId(event);
+                        if (playerId) {
+                          moveMatchPrepPlayerToBench(playerId);
+                        }
+                      }}
+                    >
+                      <h4>Bench</h4>
+                      {matchPrepBenchPlayers.length === 0 ? <p className="muted">Drop players here</p> : null}
+                      <div className="prep-player-grid">
+                        {matchPrepBenchPlayers.map((player) => (
+                          <button
+                            key={player.player_id}
+                            type="button"
+                            className="prep-player-tile"
+                            draggable
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("text/plain", player.player_id);
+                              event.dataTransfer.effectAllowed = "move";
+                            }}
+                            onDragEnd={() => setMatchPrepDragTarget("")}
+                            onDoubleClick={() => moveMatchPrepPlayerOutOfSquad(player.player_id)}
+                          >
+                            <strong>{player.player_name}</strong>
+                            <span>
+                              {player.shirt_number ? `#${player.shirt_number}` : "No #"}
+                              {player.position ? ` · ${player.position}` : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div
+                      className={`prep-dropzone is-muted ${matchPrepDragTarget === "out" ? "drag-over" : ""}`}
+                      onDragEnter={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("out");
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("out");
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        setMatchPrepDragTarget("");
+                        const playerId = getDraggedPlayerId(event);
+                        if (playerId) {
+                          moveMatchPrepPlayerOutOfSquad(playerId);
+                        }
+                      }}
+                    >
+                      <h4>Out Of Squad</h4>
+                      {matchPrepUnavailablePlayers.length === 0 ? <p className="muted">Double-click a bench tile</p> : null}
+                      <div className="prep-player-grid">
+                        {matchPrepUnavailablePlayers.map((player) => (
+                          <button
+                            key={player.player_id}
+                            type="button"
+                            className="prep-player-tile is-muted"
+                            draggable
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("text/plain", player.player_id);
+                              event.dataTransfer.effectAllowed = "move";
+                            }}
+                            onDragEnd={() => setMatchPrepDragTarget("")}
+                            onDoubleClick={() => moveMatchPrepPlayerToBench(player.player_id)}
+                          >
+                            <strong>{player.player_name}</strong>
+                            <span>
+                              {player.shirt_number ? `#${player.shirt_number}` : "No #"}
+                              {player.position ? ` · ${player.position}` : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 

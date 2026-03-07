@@ -1,0 +1,217 @@
+{
+  "formats": {
+    "5_aside": {
+      "required_starting_count": 5,
+      "formations": [
+        {
+          "id": "2-1-1",
+          "bands": {
+            "CB": [{ "role": "LB", "lane": "left" }, { "role": "RB", "lane": "right" }],
+            "DM": [],
+            "CM": [{ "role": "CM", "lane": "center" }],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        },
+        {
+          "id": "1-2-1",
+          "bands": {
+            "CB": [{ "role": "CB", "lane": "center" }],
+            "DM": [],
+            "CM": [{ "role": "LM", "lane": "left" }, { "role": "RM", "lane": "right" }],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        },
+        {
+          "id": "1-1-2",
+          "bands": {
+            "CB": [{ "role": "CB", "lane": "center" }],
+            "DM": [],
+            "CM": [{ "role": "CM", "lane": "center" }],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "left" }, { "role": "ST", "lane": "right" }]
+          }
+        }
+      ]
+    },
+    "7_aside": {
+      "required_starting_count": 7,
+      "formations": [
+        {
+          "id": "2-3-1",
+          "bands": {
+            "CB": [{ "role": "LB", "lane": "left" }, { "role": "RB", "lane": "right" }],
+            "DM": [],
+            "CM": [
+              { "role": "LM", "lane": "left" },
+              { "role": "CM", "lane": "center" },
+              { "role": "RM", "lane": "right" }
+            ],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        },
+        {
+          "id": "3-2-1",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [],
+            "CM": [{ "role": "CM", "lane": "center" }, { "role": "CM", "lane": "center" }],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        },
+        {
+          "id": "2-1-2-1",
+          "bands": {
+            "CB": [{ "role": "LB", "lane": "left" }, { "role": "RB", "lane": "right" }],
+            "DM": [{ "role": "DM", "lane": "center" }],
+            "CM": [],
+            "AM": [{ "role": "LM", "lane": "left" }, { "role": "RM", "lane": "right" }],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        }
+      ]
+    },
+    "9_aside": {
+      "required_starting_count": 9,
+      "formations": [
+        {
+          "id": "3-3-2",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [],
+            "CM": [
+              { "role": "LM", "lane": "left" },
+              { "role": "CM", "lane": "center" },
+              { "role": "RM", "lane": "right" }
+            ],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "left" }, { "role": "ST", "lane": "right" }]
+          }
+        },
+        {
+          "id": "3-2-3",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [],
+            "CM": [{ "role": "CM", "lane": "center" }, { "role": "CM", "lane": "center" }],
+            "AM": [{ "role": "LW", "lane": "left" }, { "role": "RW", "lane": "right" }],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        },
+        {
+          "id": "4-3-1",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [],
+            "CM": [
+              { "role": "LM", "lane": "left" },
+              { "role": "CM", "lane": "center" },
+              { "role": "RM", "lane": "right" }
+            ],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        }
+      ]
+    },
+    "11_aside": {
+      "required_starting_count": 11,
+      "formations": [
+        {
+          "id": "4-3-3",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [{ "role": "DM", "lane": "center" }],
+            "CM": [{ "role": "CM", "lane": "center" }, { "role": "CM", "lane": "center" }],
+            "AM": [{ "role": "LW", "lane": "left" }, { "role": "RW", "lane": "right" }],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        },
+        {
+          "id": "4-4-2",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [],
+            "CM": [
+              { "role": "LM", "lane": "left" },
+              { "role": "CM", "lane": "center" },
+              { "role": "CM", "lane": "center" },
+              { "role": "RM", "lane": "right" }
+            ],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "left" }, { "role": "ST", "lane": "right" }]
+          }
+        },
+        {
+          "id": "3-5-2",
+          "bands": {
+            "CB": [
+              { "role": "LCB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RCB", "lane": "right" }
+            ],
+            "DM": [],
+            "CM": [
+              { "role": "LWB", "lane": "left" },
+              { "role": "CM", "lane": "center" },
+              { "role": "CM", "lane": "center" },
+              { "role": "CM", "lane": "center" },
+              { "role": "RWB", "lane": "right" }
+            ],
+            "AM": [],
+            "ST": [{ "role": "ST", "lane": "left" }, { "role": "ST", "lane": "right" }]
+          }
+        },
+        {
+          "id": "4-2-3-1",
+          "bands": {
+            "CB": [
+              { "role": "LB", "lane": "left" },
+              { "role": "CB", "lane": "center" },
+              { "role": "CB", "lane": "center" },
+              { "role": "RB", "lane": "right" }
+            ],
+            "DM": [{ "role": "DM", "lane": "center" }, { "role": "DM", "lane": "center" }],
+            "CM": [],
+            "AM": [
+              { "role": "LW", "lane": "left" },
+              { "role": "AM", "lane": "center" },
+              { "role": "RW", "lane": "right" }
+            ],
+            "ST": [{ "role": "ST", "lane": "center" }]
+          }
+        }
+      ]
+    }
+  }
+}

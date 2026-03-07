@@ -582,6 +582,151 @@ select {
   color: #fff;
 }
 
+.prep-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  gap: 0.9rem;
+}
+
+.pitch-card {
+  border: 1px solid #b8cddc;
+  border-radius: 0.85rem;
+  background: #f0f7fc;
+  padding: 0.65rem;
+  width: 70%;
+  min-width: 300px;
+}
+
+.pitch-surface {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 64 / 100;
+  border-radius: 0.75rem;
+  border: 2px solid #8db5c7;
+  overflow: hidden;
+}
+
+.pitch-surface svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pitch-slot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 1px solid #95b4c4;
+  border-radius: 0.65rem;
+  min-width: 80px;
+  min-height: 44px;
+  background: rgba(244, 250, 255, 0.95);
+  color: #12384f;
+  display: grid;
+  place-items: center;
+  gap: 0.05rem;
+  padding: 0.24rem 0.35rem;
+  text-align: center;
+  z-index: 2;
+}
+
+.pitch-slot.filled {
+  border-color: #0a8465;
+  background: #e7f6f1;
+}
+
+.pitch-slot.mismatch {
+  border-color: #cf2e2e;
+  background: #ffe9e9;
+  box-shadow: 0 0 0 1px rgba(207, 46, 46, 0.25);
+}
+
+.pitch-slot.drag-over {
+  border-color: #0b6fbb;
+  box-shadow: 0 0 0 2px rgba(11, 111, 187, 0.28);
+  background: #e3f1ff;
+}
+
+.pitch-slot-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #36536a;
+}
+
+.pitch-slot-player {
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.1;
+  max-width: 86px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prep-side {
+  display: grid;
+  align-content: start;
+  gap: 0.7rem;
+}
+
+.prep-dropzone {
+  border: 1px dashed #96b5c6;
+  border-radius: 0.8rem;
+  background: #f9fcff;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.prep-dropzone h4 {
+  margin: 0;
+  color: #224a63;
+}
+
+.prep-dropzone.is-muted {
+  background: #f3f7fb;
+}
+
+.prep-dropzone.drag-over {
+  border-color: #0b6fbb;
+  background: #e8f3ff;
+  box-shadow: inset 0 0 0 1px rgba(11, 111, 187, 0.3);
+}
+
+.prep-player-grid {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.prep-player-tile {
+  border: 1px solid #b8cede;
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #13374e;
+  text-align: left;
+  font: inherit;
+  padding: 0.3rem 0.45rem;
+  display: grid;
+  gap: 0.05rem;
+  cursor: grab;
+  justify-self: start;
+  width: min(230px, 100%);
+}
+
+.prep-player-tile strong {
+  font-size: 0.78rem;
+}
+
+.prep-player-tile span {
+  font-size: 0.68rem;
+  color: #4b667a;
+}
+
+.prep-player-tile.is-muted {
+  opacity: 0.78;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -610,6 +755,15 @@ select {
 
   .player-toolbar .button {
     width: fit-content;
+  }
+
+  .prep-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .pitch-card {
+    width: 100%;
+    min-width: 0;
   }
 
   .fixture-month-controls {

@@ -6,6 +6,8 @@ import type {
   Fixture,
   FixturePayload,
   GlobalRole,
+  MatchPrepFixture,
+  MatchPrepPlan,
   Player,
   PlayerPayload,
   Team,
@@ -18,7 +20,7 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
 
-type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type TeamApiResponse = Omit<Team, "display_name">;
 type TeamDirectoryApiResponse = Omit<TeamDirectory, "display_name">;
 
@@ -166,6 +168,30 @@ export async function updateFixture(fixtureId: string, payload: FixturePayload):
 
 export async function deleteFixture(fixtureId: string): Promise<void> {
   await request<void>(`/matches/${fixtureId}`, "DELETE");
+}
+
+export async function listMatchPrepFixtures(teamId: string): Promise<MatchPrepFixture[]> {
+  return request<MatchPrepFixture[]>(`/match-prep/fixtures?team_id=${encodeURIComponent(teamId)}`, "GET");
+}
+
+export async function getMatchPrepPlan(matchId: string, teamId: string): Promise<MatchPrepPlan> {
+  const params = `match_id=${encodeURIComponent(matchId)}&team_id=${encodeURIComponent(teamId)}`;
+  return request<MatchPrepPlan>(`/match-prep/plan?${params}`, "GET");
+}
+
+export async function upsertMatchPrepPlan(payload: {
+  match_id: string;
+  team_id: string;
+  formation: string;
+  players: Array<{
+    player_id: string;
+    is_available: boolean;
+    in_matchday_squad: boolean;
+    is_starting: boolean;
+    lineup_slot: string | null;
+  }>;
+}): Promise<MatchPrepPlan> {
+  return request<MatchPrepPlan>("/match-prep/plan", "PUT", payload);
 }
 
 export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {
