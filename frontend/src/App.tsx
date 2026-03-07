@@ -32,6 +32,7 @@ import {
   register,
   revokeUserGlobalRole,
   updateFixture,
+  updatePlayer,
   updateAdminTeam,
   updateAdminClub,
   updateTeamMember,
@@ -349,6 +350,7 @@ function App() {
   const [editingFixtureId, setEditingFixtureId] = useState("");
   const [isFixtureComposerOpen, setIsFixtureComposerOpen] = useState(false);
   const [isPlayerComposerOpen, setIsPlayerComposerOpen] = useState(false);
+  const [editingPlayerId, setEditingPlayerId] = useState("");
   const [fixtureCalendarMonth, setFixtureCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -970,18 +972,29 @@ function App() {
 
     try {
       const parsedShirtNumber = shirtNumber.trim() ? Number(shirtNumber) : null;
-      const created = await createPlayer({
-        team_id: selectedTeamForPlayers,
-        display_name: playerName.trim(),
-        shirt_number: parsedShirtNumber,
-        position: selectedPositions.length > 0 ? selectedPositions.join(", ") : null,
-      });
-
-      setPlayerName("");
-      setShirtNumber("");
-      setSelectedPositions([]);
-      setIsPlayerComposerOpen(false);
-      setPlayers((existing) => [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
+      if (editingPlayerId) {
+        const updated = await updatePlayer(editingPlayerId, {
+          display_name: playerName.trim(),
+          shirt_number: parsedShirtNumber,
+          position: selectedPositions.length > 0 ? selectedPositions.join(", ") : null,
+        });
+        setPlayers((existing) =>
+          existing
+            .map((player) => (player.id === editingPlayerId ? updated : player))
+            .sort((a, b) => a.display_name.localeCompare(b.display_name)),
+        );
+      } else {
+        const created = await createPlayer({
+          team_id: selectedTeamForPlayers,
+          display_name: playerName.trim(),
+          shirt_number: parsedShirtNumber,
+          position: selectedPositions.length > 0 ? selectedPositions.join(", ") : null,
+        });
+        setPlayers((existing) =>
+          [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)),
+        );
+      }
+      resetPlayerComposer();
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -994,10 +1007,22 @@ function App() {
   };
 
   const resetPlayerComposer = () => {
+    setEditingPlayerId("");
     setPlayerName("");
     setShirtNumber("");
     setSelectedPositions([]);
     setIsPlayerComposerOpen(false);
+  };
+
+  const startPlayerEdit = (player: Player) => {
+    setEditingPlayerId(player.id);
+    setPlayerName(player.display_name);
+    setShirtNumber(player.shirt_number ? String(player.shirt_number) : "");
+    const parsedPositions = player.position
+      ? player.position.split(",").map((item) => item.trim()).filter(Boolean)
+      : [];
+    setSelectedPositions(parsedPositions);
+    setIsPlayerComposerOpen(true);
   };
 
   const handleDeletePlayer = async (playerId: string) => {
@@ -1861,10 +1886,7 @@ function App() {
                 value={selectedTeamForPlayers}
                 onChange={(nextValue) => {
                   setSelectedTeamForPlayers(nextValue);
-                  setIsPlayerComposerOpen(false);
-                  setPlayerName("");
-                  setShirtNumber("");
-                  setSelectedPositions([]);
+                  resetPlayerComposer();
                 }}
                 options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
                 placeholder="Select team"
@@ -1895,20 +1917,36 @@ function App() {
                     {player.shirt_number ? ` #${player.shirt_number}` : ""}
                     {player.position ? ` (${player.position})` : ""}
                   </span>
-                  <button
-                    className="button secondary"
-                    onClick={() => handleDeletePlayer(player.id)}
-                    type="button"
-                    disabled={
-                      isSubmitting ||
-                      (() => {
-                        const role = roleByTeamId[player.team_id];
-                        return role !== undefined && !isTeamAdminRole(role);
-                      })()
-                    }
-                  >
-                    Delete
-                  </button>
+                  <div className="member-actions">
+                    <button
+                      className="button secondary"
+                      onClick={() => startPlayerEdit(player)}
+                      type="button"
+                      disabled={
+                        isSubmitting ||
+                        (() => {
+                          const role = roleByTeamId[player.team_id];
+                          return role !== undefined && !isTeamAdminRole(role);
+                        })()
+                      }
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => handleDeletePlayer(player.id)}
+                      type="button"
+                      disabled={
+                        isSubmitting ||
+                        (() => {
+                          const role = roleByTeamId[player.team_id];
+                          return role !== undefined && !isTeamAdminRole(role);
+                        })()
+                      }
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1916,7 +1954,7 @@ function App() {
             {isPlayerComposerOpen ? (
               <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
                 <form className="fixture-composer" onSubmit={handleCreatePlayer}>
-                  <h3>Add Player</h3>
+                  <h3>{editingPlayerId ? "Edit Player" : "Add Player"}</h3>
                   <p className="muted">{selectedTeamForPlayersName}</p>
                   <input
                     placeholder="Player name"
@@ -1946,7 +1984,7 @@ function App() {
                   </div>
                   <div className="member-actions">
                     <button className="button primary" disabled={isSubmitting || !selectedTeamForPlayers} type="submit">
-                      Add Player
+                      {editingPlayerId ? "Save Player" : "Add Player"}
                     </button>
                     <button className="button secondary" type="button" disabled={isSubmitting} onClick={resetPlayerComposer}>
                       Cancel

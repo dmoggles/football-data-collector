@@ -139,6 +139,14 @@ export async function createPlayer(payload: PlayerPayload): Promise<Player> {
   return request<Player>("/players", "POST", payload);
 }
 
+export async function updatePlayer(playerId: string, payload: {
+  display_name: string;
+  shirt_number: number | null;
+  position: string | null;
+}): Promise<Player> {
+  return request<Player>(`/players/${playerId}`, "PATCH", payload);
+}
+
 export async function deletePlayer(playerId: string): Promise<void> {
   await request<void>(`/players/${playerId}`, "DELETE");
 }
