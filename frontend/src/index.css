@@ -418,6 +418,19 @@ select {
   margin-bottom: 0.8rem;
 }
 
+.player-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto;
+  gap: 0.7rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.player-toolbar .button {
+  justify-self: end;
+  width: fit-content;
+}
+
 .fixture-month-controls {
   display: inline-flex;
   align-items: center;
@@ -589,6 +602,14 @@ select {
 
   .fixture-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .player-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .player-toolbar .button {
+    width: fit-content;
   }
 
   .fixture-month-controls {

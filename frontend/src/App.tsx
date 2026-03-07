@@ -348,6 +348,7 @@ function App() {
   const [fixtureStatus, setFixtureStatus] = useState("scheduled");
   const [editingFixtureId, setEditingFixtureId] = useState("");
   const [isFixtureComposerOpen, setIsFixtureComposerOpen] = useState(false);
+  const [isPlayerComposerOpen, setIsPlayerComposerOpen] = useState(false);
   const [fixtureCalendarMonth, setFixtureCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -960,6 +961,10 @@ function App() {
 
   const handleCreatePlayer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!selectedTeamForPlayers) {
+      setError("Select a team first");
+      return;
+    }
     setError(null);
     setIsSubmitting(true);
 
@@ -975,6 +980,7 @@ function App() {
       setPlayerName("");
       setShirtNumber("");
       setSelectedPositions([]);
+      setIsPlayerComposerOpen(false);
       setPlayers((existing) => [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
     } catch (requestError) {
       if (requestError instanceof Error) {
@@ -985,6 +991,13 @@ function App() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const resetPlayerComposer = () => {
+    setPlayerName("");
+    setShirtNumber("");
+    setSelectedPositions([]);
+    setIsPlayerComposerOpen(false);
   };
 
   const handleDeletePlayer = async (playerId: string) => {
@@ -1842,62 +1855,39 @@ function App() {
         ) : null}
 
         {section === "players" ? (
-          <section className="section-card two-col">
-            <form className="stack-form" onSubmit={handleCreatePlayer}>
-              <h3>Add Player</h3>
-              <input
-                placeholder="Player name"
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-                required
-              />
+          <section className="section-card">
+            <div className="player-toolbar">
               <SearchableSelect
                 value={selectedTeamForPlayers}
-                onChange={setSelectedTeamForPlayers}
+                onChange={(nextValue) => {
+                  setSelectedTeamForPlayers(nextValue);
+                  setIsPlayerComposerOpen(false);
+                  setPlayerName("");
+                  setShirtNumber("");
+                  setSelectedPositions([]);
+                }}
                 options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
                 placeholder="Select team"
               />
-              <input
-                placeholder="Shirt number"
-                value={shirtNumber}
-                onChange={(event) => setShirtNumber(event.target.value)}
-                inputMode="numeric"
-                pattern="[0-9]*"
-              />
-
-              <div className="position-grid">
-                {POSITION_OPTIONS.map((positionCode) => (
-                  <label className="position-option" key={positionCode}>
-                    <input
-                      checked={selectedPositions.includes(positionCode)}
-                      onChange={() => togglePosition(positionCode)}
-                      type="checkbox"
-                    />
-                    <span>{positionCode}</span>
-                  </label>
-                ))}
-              </div>
-
               <button
                 className="button primary"
+                type="button"
                 disabled={
-                  isSubmitting ||
-                  teams.length === 0 ||
-                  !selectedTeamForPlayers ||
-                  !selectedTeamForPlayersCanManage
+                  isSubmitting || teams.length === 0 || !selectedTeamForPlayers || !selectedTeamForPlayersCanManage
                 }
-                type="submit"
+                onClick={() => setIsPlayerComposerOpen(true)}
               >
-                Add Player
+                + Add Player
               </button>
-              {!selectedTeamForPlayersCanManage && selectedTeamForPlayers ? (
-                <p className="muted">Team admin access required to add players.</p>
-              ) : null}
-            </form>
+            </div>
+            {!selectedTeamForPlayers ? <p className="muted">Select a team to view players.</p> : null}
+            {!selectedTeamForPlayersCanManage && selectedTeamForPlayers ? (
+              <p className="muted">Team admin access required to add players.</p>
+            ) : null}
 
             <div>
               <h3>Players {selectedTeamForPlayersName ? `- ${selectedTeamForPlayersName}` : ""}</h3>
-              {playersForSelectedTeam.length === 0 ? <p className="muted">No players yet.</p> : null}
+              {selectedTeamForPlayers && playersForSelectedTeam.length === 0 ? <p className="muted">No players yet.</p> : null}
               {playersForSelectedTeam.map((player) => (
                 <div className="list-row" key={player.id}>
                   <span>
@@ -1922,6 +1912,49 @@ function App() {
                 </div>
               ))}
             </div>
+
+            {isPlayerComposerOpen ? (
+              <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+                <form className="fixture-composer" onSubmit={handleCreatePlayer}>
+                  <h3>Add Player</h3>
+                  <p className="muted">{selectedTeamForPlayersName}</p>
+                  <input
+                    placeholder="Player name"
+                    value={playerName}
+                    onChange={(event) => setPlayerName(event.target.value)}
+                    required
+                  />
+                  <input
+                    placeholder="Shirt number"
+                    value={shirtNumber}
+                    onChange={(event) => setShirtNumber(event.target.value)}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                  />
+
+                  <div className="position-grid">
+                    {POSITION_OPTIONS.map((positionCode) => (
+                      <label className="position-option" key={positionCode}>
+                        <input
+                          checked={selectedPositions.includes(positionCode)}
+                          onChange={() => togglePosition(positionCode)}
+                          type="checkbox"
+                        />
+                        <span>{positionCode}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="member-actions">
+                    <button className="button primary" disabled={isSubmitting || !selectedTeamForPlayers} type="submit">
+                      Add Player
+                    </button>
+                    <button className="button secondary" type="button" disabled={isSubmitting} onClick={resetPlayerComposer}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
