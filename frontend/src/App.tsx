@@ -60,7 +60,7 @@ import type {
 } from "./types/auth";
 
 type AuthMode = "login" | "register";
-type Section = "dashboard" | "fixtures" | "match_prep" | "teams" | "players" | "members" | "admin";
+type Section = "dashboard" | "fixtures" | "match_prep" | "players" | "teams" | "members" | "settings" | "admin";
 type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
 type FixtureVenue = "home" | "away";
 
@@ -72,6 +72,7 @@ const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shor
   { id: "players", label: "Players", shortLabel: "P" },
   { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "members", label: "Members", shortLabel: "M" },
+  { id: "settings", label: "Settings", shortLabel: "S" },
 ];
 const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
   { value: "5_aside", label: "5 Aside" },
@@ -1854,13 +1855,18 @@ function App() {
                 <h3>Members</h3>
                 <p>{dashboardStats.members}</p>
               </article>
-              <article>
+            <article>
                 <h3>Next Match</h3>
                 <p>{nextMatchTile.title}</p>
                 <span className="muted">{nextMatchTile.subtitle}</span>
               </article>
             </div>
-            <div className="stack-form" style={{ marginTop: "1rem" }}>
+          </section>
+        ) : null}
+
+        {section === "settings" ? (
+          <section className="section-card">
+            <div className="stack-form">
               <h3>Account Security</h3>
               <form className="stack-form" onSubmit={handleChangePassword}>
                 <input
