@@ -231,6 +231,7 @@ type SearchableSelectProps = {
   options: SearchableOption[];
   placeholder: string;
   disabled?: boolean;
+  className?: string;
   onChange: (nextValue: string) => void;
 };
 
@@ -239,6 +240,7 @@ function SearchableSelect({
   options,
   placeholder,
   disabled = false,
+  className,
   onChange,
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -283,7 +285,7 @@ function SearchableSelect({
   );
 
   return (
-    <div className={`searchable-select ${disabled ? "disabled" : ""}`} ref={rootRef}>
+    <div className={`searchable-select ${disabled ? "disabled" : ""} ${className ?? ""}`} ref={rootRef}>
       <input
         value={query}
         onFocus={() => {
@@ -391,7 +393,7 @@ function App() {
   const [playerName, setPlayerName] = useState("");
   const [shirtNumber, setShirtNumber] = useState("");
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
-  const [fixtureTeamId, setFixtureTeamId] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [fixtureOpponentTeamId, setFixtureOpponentTeamId] = useState("");
   const [fixtureFormat, setFixtureFormat] = useState<MatchFormat>("11_aside");
   const [fixturePeriodFormat, setFixturePeriodFormat] = useState<MatchPeriodFormat>("halves");
@@ -412,9 +414,6 @@ function App() {
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
 
-  const [selectedTeamForPlayers, setSelectedTeamForPlayers] = useState("");
-  const [selectedTeamForMembers, setSelectedTeamForMembers] = useState("");
-  const [selectedTeamForMatchPrep, setSelectedTeamForMatchPrep] = useState("");
   const [selectedFixtureForMatchPrep, setSelectedFixtureForMatchPrep] = useState("");
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
 
@@ -447,18 +446,9 @@ function App() {
     [isSuperAdmin],
   );
 
-  const selectedTeamForPlayersName = useMemo(
-    () => teams.find((team) => team.id === selectedTeamForPlayers)?.display_name ?? "",
-    [selectedTeamForPlayers, teams],
-  );
-
-  const selectedTeamForMembersName = useMemo(
-    () => teams.find((team) => team.id === selectedTeamForMembers)?.display_name ?? "",
-    [selectedTeamForMembers, teams],
-  );
-  const selectedTeamForMatchPrepName = useMemo(
-    () => teams.find((team) => team.id === selectedTeamForMatchPrep)?.display_name ?? "",
-    [selectedTeamForMatchPrep, teams],
+  const selectedTeamName = useMemo(
+    () => teams.find((team) => team.id === selectedTeamId)?.display_name ?? "",
+    [selectedTeamId, teams],
   );
   const matchPrepSlots = useMemo(
     () => (matchPrepPlan ? getFormationSlots(matchPrepPlan.format, matchPrepPlan.formation) : []),
@@ -490,11 +480,11 @@ function App() {
   );
 
   const playersForSelectedTeam = useMemo(() => {
-    if (!selectedTeamForPlayers) {
+    if (!selectedTeamId) {
       return players;
     }
-    return players.filter((player) => player.team_id === selectedTeamForPlayers);
-  }, [players, selectedTeamForPlayers]);
+    return players.filter((player) => player.team_id === selectedTeamId);
+  }, [players, selectedTeamId]);
 
   const dashboardStats = useMemo(
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
@@ -517,7 +507,7 @@ function App() {
     }
 
     const fixture = next.fixture;
-    const selectedTeamIsHome = fixtureTeamId ? fixture.home_team_id === fixtureTeamId : true;
+    const selectedTeamIsHome = selectedTeamId ? fixture.home_team_id === selectedTeamId : true;
     const opponent = selectedTeamIsHome
       ? `${fixture.away_club_name} ${fixture.away_team_name}`
       : `${fixture.home_club_name} ${fixture.home_team_name}`;
@@ -531,7 +521,7 @@ function App() {
         minute: "2-digit",
       }),
     };
-  }, [fixtureTeamId, fixtures]);
+  }, [fixtures, selectedTeamId]);
   const filteredAdminTeams = useMemo(() => {
     if (!adminOverview) {
       return [];
@@ -548,31 +538,22 @@ function App() {
     }
     return mapping;
   }, [teams]);
-  const selectedTeamForPlayersCanManage = useMemo(
+  const selectedTeamCanManage = useMemo(
     () =>
       Boolean(
-        selectedTeamForPlayers &&
-          (!roleByTeamId[selectedTeamForPlayers] ||
-            isTeamAdminRole(roleByTeamId[selectedTeamForPlayers])),
+        selectedTeamId &&
+          (!roleByTeamId[selectedTeamId] ||
+            isTeamAdminRole(roleByTeamId[selectedTeamId])),
       ),
-    [roleByTeamId, selectedTeamForPlayers],
-  );
-  const selectedTeamForMembersCanManage = useMemo(
-    () =>
-      Boolean(
-        selectedTeamForMembers &&
-          (!roleByTeamId[selectedTeamForMembers] ||
-            isTeamAdminRole(roleByTeamId[selectedTeamForMembers])),
-      ),
-    [roleByTeamId, selectedTeamForMembers],
+    [roleByTeamId, selectedTeamId],
   );
   const ownedTeams = useMemo(
     () => teams.filter((team) => team.my_role && isTeamAdminRole(team.my_role)),
     [teams],
   );
   const fixtureOppositionOptions = useMemo(
-    () => teamDirectory.filter((team) => team.id !== fixtureTeamId),
-    [fixtureTeamId, teamDirectory],
+    () => teamDirectory.filter((team) => team.id !== selectedTeamId),
+    [selectedTeamId, teamDirectory],
   );
   const clubNameOptions = useMemo(() => {
     const teamDirectoryClubNames = teamDirectory.map((team) => team.club_name.trim()).filter(Boolean);
@@ -580,10 +561,6 @@ function App() {
     const uniqueClubNames = Array.from(new Set([...teamDirectoryClubNames, ...adminClubNames]));
     return uniqueClubNames.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name }));
   }, [adminOverview, teamDirectory]);
-  const selectedFixtureTeamName = useMemo(
-    () => ownedTeams.find((team) => team.id === fixtureTeamId)?.display_name ?? "",
-    [fixtureTeamId, ownedTeams],
-  );
   const fixturesByDateKey = useMemo(() => {
     const grouped: Record<string, Fixture[]> = {};
     for (const fixture of fixtures) {
@@ -596,7 +573,7 @@ function App() {
     return grouped;
   }, [fixtures]);
   const fixtureConflictWarnings = useMemo(() => {
-    if (!fixtureTeamId || !fixtureOpponentTeamId || !fixtureKickoffDate) {
+    if (!selectedTeamId || !fixtureOpponentTeamId || !fixtureKickoffDate) {
       return [];
     }
 
@@ -615,7 +592,7 @@ function App() {
       const fixtureTime = fixture.kickoff_at ? new Date(fixture.kickoff_at).toTimeString().slice(0, 5) : "";
       const fixtureMinutes = fixtureTime ? timeToMinutes(fixtureTime) : null;
       const fixtureOppositionId =
-        fixture.home_team_id === fixtureTeamId ? fixture.away_team_id : fixture.home_team_id;
+        fixture.home_team_id === selectedTeamId ? fixture.away_team_id : fixture.home_team_id;
 
       if (
         fixtureDateKey === fixtureKickoffDate &&
@@ -646,7 +623,7 @@ function App() {
     fixtureKickoffDate,
     fixtureKickoffTime,
     fixtureOpponentTeamId,
-    fixtureTeamId,
+    selectedTeamId,
     fixtures,
   ]);
   const calendarCells = useMemo(() => {
@@ -671,7 +648,7 @@ function App() {
     return cells;
   }, [fixtureCalendarMonth]);
 
-  const loadWorkspaceData = useCallback(async (preferredFixtureTeamId = "") => {
+  const loadWorkspaceData = useCallback(async (preferredTeamId = "") => {
     setIsWorkspaceLoading(true);
     try {
       const [teamsResponse, playersResponse, teamDirectoryResponse] = await Promise.all([
@@ -679,25 +656,15 @@ function App() {
         listPlayers(),
         listTeamDirectory(),
       ]);
-      const ownedTeamIds = new Set(
-        teamsResponse.filter((team) => team.my_role && isTeamAdminRole(team.my_role)).map((team) => team.id),
-      );
-      const nextFixtureTeamId = ownedTeamIds.has(preferredFixtureTeamId)
-        ? preferredFixtureTeamId
-        : teamsResponse.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id || "";
-      const fixturesResponse = nextFixtureTeamId ? await listFixtures(nextFixtureTeamId) : [];
+      const nextTeamId = teamsResponse.some((team) => team.id === preferredTeamId)
+        ? preferredTeamId
+        : teamsResponse[0]?.id || "";
+      const fixturesResponse = nextTeamId ? await listFixtures(nextTeamId) : [];
       setTeams(teamsResponse);
       setTeamDirectory(teamDirectoryResponse);
       setFixtures(fixturesResponse);
       setPlayers(playersResponse);
-      setSelectedTeamForPlayers((current) => current || teamsResponse[0]?.id || "");
-      setSelectedTeamForMembers((current) => current || teamsResponse[0]?.id || "");
-      setSelectedTeamForMatchPrep((current) =>
-        ownedTeamIds.has(current)
-          ? current
-          : teamsResponse.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id || "",
-      );
-      setFixtureTeamId(nextFixtureTeamId);
+      setSelectedTeamId(nextTeamId);
     } finally {
       setIsWorkspaceLoading(false);
     }
@@ -809,54 +776,56 @@ function App() {
     if (section !== "members") {
       return;
     }
-    if (!selectedTeamForMembersCanManage) {
+    if (!selectedTeamCanManage) {
       setTeamMembers([]);
       setMembersLoadError(
-        selectedTeamForMembers ? "Admin access required to manage members for this team." : null,
+        selectedTeamId ? "Admin access required to manage members for this team." : null,
       );
       return;
     }
-    void loadTeamMembers(selectedTeamForMembers);
-  }, [loadTeamMembers, section, selectedTeamForMembers, selectedTeamForMembersCanManage, user]);
-
-  useEffect(() => {
-    if (ownedTeams.length === 0) {
-      setSelectedTeamForMatchPrep("");
-      setSelectedFixtureForMatchPrep("");
-      setMatchPrepPlan(null);
-      return;
-    }
-    if (ownedTeams.every((team) => team.id !== selectedTeamForMatchPrep)) {
-      setSelectedTeamForMatchPrep(ownedTeams[0].id);
-      setSelectedFixtureForMatchPrep("");
-      setMatchPrepPlan(null);
-    }
-  }, [ownedTeams, selectedTeamForMatchPrep]);
+    void loadTeamMembers(selectedTeamId);
+  }, [loadTeamMembers, section, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
     if (!user || section !== "match_prep") {
       return;
     }
-    void loadMatchPrepFixtures(selectedTeamForMatchPrep);
-  }, [loadMatchPrepFixtures, section, selectedTeamForMatchPrep, user]);
+    if (!selectedTeamCanManage) {
+      setMatchPrepFixtures([]);
+      setSelectedFixtureForMatchPrep("");
+      setMatchPrepPlan(null);
+      return;
+    }
+    void loadMatchPrepFixtures(selectedTeamId);
+  }, [loadMatchPrepFixtures, section, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
     if (!user || section !== "match_prep") {
       return;
     }
-    if (!selectedFixtureForMatchPrep || !selectedTeamForMatchPrep) {
+    if (!selectedFixtureForMatchPrep || !selectedTeamId || !selectedTeamCanManage) {
       setMatchPrepPlan(null);
       return;
     }
-    void loadMatchPrepPlan(selectedFixtureForMatchPrep, selectedTeamForMatchPrep);
-  }, [loadMatchPrepPlan, section, selectedFixtureForMatchPrep, selectedTeamForMatchPrep, user]);
+    void loadMatchPrepPlan(selectedFixtureForMatchPrep, selectedTeamId);
+  }, [loadMatchPrepPlan, section, selectedFixtureForMatchPrep, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
-    if (!user || !fixtureTeamId) {
+    if (!user || !selectedTeamId) {
       return;
     }
-    void loadFixturesForTeam(fixtureTeamId);
-  }, [fixtureTeamId, loadFixturesForTeam, user]);
+    void loadFixturesForTeam(selectedTeamId);
+  }, [loadFixturesForTeam, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (teams.length === 0) {
+      setSelectedTeamId("");
+      return;
+    }
+    if (teams.every((team) => team.id !== selectedTeamId)) {
+      setSelectedTeamId(teams[0].id);
+    }
+  }, [selectedTeamId, teams]);
 
   const authSubmitLabel = useMemo(() => {
     if (isSubmitting) {
@@ -1090,10 +1059,7 @@ function App() {
           },
         ].sort((a, b) => a.display_name.localeCompare(b.display_name)),
       );
-      setSelectedTeamForPlayers(created.id);
-      setSelectedTeamForMembers(created.id);
-      setSelectedTeamForMatchPrep((current) => current || created.id);
-      setFixtureTeamId((current) => current || created.id);
+      setSelectedTeamId((current) => current || created.id);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -1116,25 +1082,15 @@ function App() {
       setTeamDirectory((existing) => existing.filter((team) => team.id !== teamId));
       setPlayers((existing) => existing.filter((player) => player.team_id !== teamId));
 
-      if (selectedTeamForPlayers === teamId) {
-        setSelectedTeamForPlayers(remainingTeams[0]?.id ?? "");
-      }
-      if (selectedTeamForMembers === teamId) {
-        const next = remainingTeams[0]?.id ?? "";
-        setSelectedTeamForMembers(next);
-        await loadTeamMembers(next);
-      }
-      if (fixtureTeamId === teamId) {
-        const nextOwned = remainingTeams.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id ?? "";
-        setFixtureTeamId(nextOwned);
-        setFixtures([]);
-        resetFixtureForm();
-      }
-      if (selectedTeamForMatchPrep === teamId) {
-        const nextOwned = remainingTeams.find((team) => team.my_role && isTeamAdminRole(team.my_role))?.id ?? "";
-        setSelectedTeamForMatchPrep(nextOwned);
+      if (selectedTeamId === teamId) {
+        const nextTeamId = remainingTeams[0]?.id ?? "";
+        setSelectedTeamId(nextTeamId);
+        if (!nextTeamId) {
+          setFixtures([]);
+        }
         setSelectedFixtureForMatchPrep("");
         setMatchPrepPlan(null);
+        resetFixtureForm();
       }
     } catch (requestError) {
       if (requestError instanceof Error) {
@@ -1180,7 +1136,7 @@ function App() {
 
   const handleCreateOrUpdateFixture = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!fixtureTeamId) {
+    if (!selectedTeamId) {
       setError("Select one of your teams first");
       return;
     }
@@ -1188,7 +1144,7 @@ function App() {
       setError("Please select a valid opposition team from the list");
       return;
     }
-    if (fixtureTeamId === fixtureOpponentTeamId) {
+    if (selectedTeamId === fixtureOpponentTeamId) {
       setError("Opposition team must be different");
       return;
     }
@@ -1209,8 +1165,8 @@ function App() {
         ? new Date(`${fixtureKickoffDate}T${fixtureKickoffTime}`).toISOString()
         : null;
       const payload = {
-        home_team_id: fixtureVenue === "home" ? fixtureTeamId : fixtureOpponentTeamId,
-        away_team_id: fixtureVenue === "home" ? fixtureOpponentTeamId : fixtureTeamId,
+        home_team_id: fixtureVenue === "home" ? selectedTeamId : fixtureOpponentTeamId,
+        away_team_id: fixtureVenue === "home" ? fixtureOpponentTeamId : selectedTeamId,
         format: fixtureFormat,
         period_format: fixturePeriodFormat,
         period_length_minutes: parsedPeriodLength,
@@ -1223,7 +1179,7 @@ function App() {
       } else {
         await createFixture(payload);
       }
-      await loadFixturesForTeam(fixtureTeamId);
+      await loadFixturesForTeam(selectedTeamId);
       resetFixtureForm();
     } catch (requestError) {
       if (requestError instanceof Error) {
@@ -1247,7 +1203,7 @@ function App() {
       if (editingFixtureId === fixtureId) {
         resetFixtureForm();
       }
-      await loadFixturesForTeam(fixtureTeamId);
+      await loadFixturesForTeam(selectedTeamId);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -1261,7 +1217,7 @@ function App() {
 
   const startFixtureEdit = (fixture: Fixture) => {
     setEditingFixtureId(fixture.id);
-    const selectedTeamIsHome = fixture.home_team_id === fixtureTeamId;
+    const selectedTeamIsHome = fixture.home_team_id === selectedTeamId;
     setFixtureVenue(selectedTeamIsHome ? "home" : "away");
     const oppositionTeamId = selectedTeamIsHome ? fixture.away_team_id : fixture.home_team_id;
     setFixtureOpponentTeamId(oppositionTeamId);
@@ -1286,7 +1242,7 @@ function App() {
 
   const handleCreatePlayer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedTeamForPlayers) {
+    if (!selectedTeamId) {
       setError("Select a team first");
       return;
     }
@@ -1308,7 +1264,7 @@ function App() {
         );
       } else {
         const created = await createPlayer({
-          team_id: selectedTeamForPlayers,
+          team_id: selectedTeamId,
           display_name: playerName.trim(),
           shirt_number: parsedShirtNumber,
           position: selectedPositions.length > 0 ? selectedPositions.join(", ") : null,
@@ -1368,7 +1324,7 @@ function App() {
 
   const handleAddTeamMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedTeamForMembers) {
+    if (!selectedTeamId) {
       return;
     }
 
@@ -1376,13 +1332,13 @@ function App() {
     setIsSubmitting(true);
 
     try {
-      await addTeamMember(selectedTeamForMembers, {
+      await addTeamMember(selectedTeamId, {
         user_email: newMemberEmail.trim().toLowerCase(),
         role: newMemberRole,
       });
       setNewMemberEmail("");
       setNewMemberRole("data_enterer");
-      await loadTeamMembers(selectedTeamForMembers);
+      await loadTeamMembers(selectedTeamId);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -1395,7 +1351,7 @@ function App() {
   };
 
   const handleMemberRoleChange = async (membershipId: string, role: TeamRole) => {
-    if (!selectedTeamForMembers) {
+    if (!selectedTeamId) {
       return;
     }
 
@@ -1403,8 +1359,8 @@ function App() {
     setIsSubmitting(true);
 
     try {
-      await updateTeamMember(selectedTeamForMembers, membershipId, { role });
-      await loadTeamMembers(selectedTeamForMembers);
+      await updateTeamMember(selectedTeamId, membershipId, { role });
+      await loadTeamMembers(selectedTeamId);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -1417,7 +1373,7 @@ function App() {
   };
 
   const handleDeleteTeamMember = async (membershipId: string) => {
-    if (!selectedTeamForMembers) {
+    if (!selectedTeamId) {
       return;
     }
 
@@ -1425,8 +1381,8 @@ function App() {
     setIsSubmitting(true);
 
     try {
-      await deleteTeamMember(selectedTeamForMembers, membershipId);
-      await loadTeamMembers(selectedTeamForMembers);
+      await deleteTeamMember(selectedTeamId, membershipId);
+      await loadTeamMembers(selectedTeamId);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -1819,6 +1775,24 @@ function App() {
             </button>
           ))}
         </nav>
+        {!sidebarCollapsed ? (
+          <div className="sidebar-team-selector">
+            <p className="muted">Team</p>
+            <SearchableSelect
+              value={selectedTeamId}
+              onChange={(nextValue) => {
+                setSelectedTeamId(nextValue);
+                setSelectedFixtureForMatchPrep("");
+                setMatchPrepPlan(null);
+                resetFixtureForm();
+                resetPlayerComposer();
+              }}
+              options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
+              placeholder="Select team"
+              className="sidebar-team-select"
+            />
+          </div>
+        ) : null}
 
         {!sidebarCollapsed ? <p className="sidebar-user">{user.email}</p> : null}
       </aside>
@@ -1905,15 +1879,6 @@ function App() {
         {section === "fixtures" ? (
           <section className="section-card">
             <div className="fixture-toolbar">
-              <SearchableSelect
-                value={fixtureTeamId}
-                options={ownedTeams.map((team) => ({ value: team.id, label: team.display_name }))}
-                placeholder="Select your team"
-                onChange={(nextValue) => {
-                  setFixtureTeamId(nextValue);
-                  resetFixtureForm();
-                }}
-              />
               <div className="fixture-month-controls">
                 <button
                   className="button secondary"
@@ -1949,17 +1914,20 @@ function App() {
               <button
                 className="button primary"
                 type="button"
-                disabled={!fixtureTeamId}
+                disabled={!selectedTeamId || !selectedTeamCanManage}
                 onClick={() => openFixtureComposer()}
               >
                 + Add Fixture
               </button>
             </div>
 
-            {!fixtureTeamId ? <p className="muted">Select one of your teams to view fixtures.</p> : null}
-            {fixtureTeamId ? (
+            {!selectedTeamId ? <p className="muted">Select a team to view fixtures.</p> : null}
+            {!selectedTeamCanManage && selectedTeamId ? (
+              <p className="muted">Team admin access required to add or edit fixtures.</p>
+            ) : null}
+            {selectedTeamId ? (
               <>
-                <p className="muted">Showing fixtures for {selectedFixtureTeamName}.</p>
+                <p className="muted">Showing fixtures for {selectedTeamName}.</p>
                 <div className="calendar-weekdays">
                   {CALENDAR_WEEKDAY_LABELS.map((label) => (
                     <span key={label}>{label}</span>
@@ -1991,10 +1959,10 @@ function App() {
                         <div className="calendar-fixtures">
                           {dayFixtures.map((fixture) => {
                             const oppositionName =
-                              fixture.home_team_id === fixtureTeamId
+                              fixture.home_team_id === selectedTeamId
                                 ? `${fixture.away_club_name} ${fixture.away_team_name}`
                                 : `${fixture.home_club_name} ${fixture.home_team_name}`;
-                            const venueLabel = fixture.home_team_id === fixtureTeamId ? "H" : "A";
+                            const venueLabel = fixture.home_team_id === selectedTeamId ? "H" : "A";
                             return (
                               <button
                                 key={fixture.id}
@@ -2042,7 +2010,7 @@ function App() {
               <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
                 <form className="fixture-composer" onSubmit={handleCreateOrUpdateFixture}>
                   <h3>{editingFixtureId ? "Edit Fixture" : "Add Fixture"}</h3>
-                  <p className="muted">{selectedFixtureTeamName}</p>
+                  <p className="muted">{selectedTeamName}</p>
                   <div className="fixture-venue-toggle" role="group" aria-label="Fixture venue">
                     <button
                       className={`button secondary ${fixtureVenue === "home" ? "is-selected" : ""}`}
@@ -2140,7 +2108,7 @@ function App() {
                   <div className="member-actions">
                     <button
                       className="button primary"
-                      disabled={isSubmitting || !fixtureTeamId || !fixtureOpponentTeamId}
+                      disabled={isSubmitting || !selectedTeamId || !fixtureOpponentTeamId}
                       type="submit"
                     >
                       {editingFixtureId ? "Save Fixture" : "Create Fixture"}
@@ -2214,17 +2182,7 @@ function App() {
 
         {section === "match_prep" ? (
           <section className="section-card">
-            <div className="player-toolbar">
-              <SearchableSelect
-                value={selectedTeamForMatchPrep}
-                onChange={(nextValue) => {
-                  setSelectedTeamForMatchPrep(nextValue);
-                  setSelectedFixtureForMatchPrep("");
-                  setMatchPrepPlan(null);
-                }}
-                options={ownedTeams.map((team) => ({ value: team.id, label: team.display_name }))}
-                placeholder="Select team"
-              />
+            <div className="player-toolbar match-prep-toolbar">
               <button
                 className="button primary"
                 type="button"
@@ -2237,10 +2195,13 @@ function App() {
             {ownedTeams.length === 0 ? (
               <p className="muted">No team admin access yet. Ask a super admin to assign you to a team.</p>
             ) : null}
-            {!selectedTeamForMatchPrep && ownedTeams.length > 0 ? (
-              <p className="muted">Select a team to start match prep.</p>
+            {!selectedTeamId && ownedTeams.length > 0 ? (
+              <p className="muted">Select a team in the sidebar to start match prep.</p>
             ) : null}
-            <div className="stack-form" style={{ marginTop: "0.6rem" }}>
+            {!selectedTeamCanManage && selectedTeamId ? (
+              <p className="muted">Team admin access required for match prep on this team.</p>
+            ) : null}
+            <div className="stack-form match-prep-fixture-picker" style={{ marginTop: "0.6rem" }}>
               <SearchableSelect
                 value={selectedFixtureForMatchPrep}
                 onChange={setSelectedFixtureForMatchPrep}
@@ -2249,15 +2210,15 @@ function App() {
                   label: `${fixture.opponent_team_name}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleString()}` : ""}`,
                 }))}
                 placeholder="Select upcoming fixture"
-                disabled={!selectedTeamForMatchPrep}
+                disabled={!selectedTeamId || !selectedTeamCanManage}
               />
             </div>
-            {!selectedFixtureForMatchPrep && selectedTeamForMatchPrep ? (
-              <p className="muted">No upcoming fixtures for {selectedTeamForMatchPrepName}.</p>
+            {!selectedFixtureForMatchPrep && selectedTeamId && selectedTeamCanManage ? (
+              <p className="muted">No upcoming fixtures for {selectedTeamName}.</p>
             ) : null}
             {matchPrepPlan ? (
               <div className="stack-form" style={{ marginTop: "0.8rem" }}>
-                <div className="member-actions">
+                <div className="member-actions match-prep-formation-row">
                   <span className="muted">Formation</span>
                   <select
                     value={matchPrepPlan.formation}
@@ -2453,35 +2414,26 @@ function App() {
 
         {section === "players" ? (
           <section className="section-card">
-            <div className="player-toolbar">
-              <SearchableSelect
-                value={selectedTeamForPlayers}
-                onChange={(nextValue) => {
-                  setSelectedTeamForPlayers(nextValue);
-                  resetPlayerComposer();
-                }}
-                options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
-                placeholder="Select team"
-              />
+            <div className="player-toolbar match-prep-toolbar">
               <button
                 className="button primary"
                 type="button"
                 disabled={
-                  isSubmitting || teams.length === 0 || !selectedTeamForPlayers || !selectedTeamForPlayersCanManage
+                  isSubmitting || teams.length === 0 || !selectedTeamId || !selectedTeamCanManage
                 }
                 onClick={() => setIsPlayerComposerOpen(true)}
               >
                 + Add Player
               </button>
             </div>
-            {!selectedTeamForPlayers ? <p className="muted">Select a team to view players.</p> : null}
-            {!selectedTeamForPlayersCanManage && selectedTeamForPlayers ? (
+            {!selectedTeamId ? <p className="muted">Select a team to view players.</p> : null}
+            {!selectedTeamCanManage && selectedTeamId ? (
               <p className="muted">Team admin access required to add players.</p>
             ) : null}
 
             <div>
-              <h3>Players {selectedTeamForPlayersName ? `- ${selectedTeamForPlayersName}` : ""}</h3>
-              {selectedTeamForPlayers && playersForSelectedTeam.length === 0 ? <p className="muted">No players yet.</p> : null}
+              <h3>Players {selectedTeamName ? `- ${selectedTeamName}` : ""}</h3>
+              {selectedTeamId && playersForSelectedTeam.length === 0 ? <p className="muted">No players yet.</p> : null}
               {playersForSelectedTeam.map((player) => (
                 <div className="list-row" key={player.id}>
                   <span>
@@ -2527,7 +2479,7 @@ function App() {
               <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
                 <form className="fixture-composer" onSubmit={handleCreatePlayer}>
                   <h3>{editingPlayerId ? "Edit Player" : "Add Player"}</h3>
-                  <p className="muted">{selectedTeamForPlayersName}</p>
+                  <p className="muted">{selectedTeamName}</p>
                   <input
                     placeholder="Player name"
                     value={playerName}
@@ -2555,7 +2507,7 @@ function App() {
                     ))}
                   </div>
                   <div className="member-actions">
-                    <button className="button primary" disabled={isSubmitting || !selectedTeamForPlayers} type="submit">
+                    <button className="button primary" disabled={isSubmitting || !selectedTeamId} type="submit">
                       {editingPlayerId ? "Save Player" : "Add Player"}
                     </button>
                     <button className="button secondary" type="button" disabled={isSubmitting} onClick={resetPlayerComposer}>
@@ -2572,12 +2524,7 @@ function App() {
           <section className="section-card two-col">
             <form className="stack-form" onSubmit={handleAddTeamMember}>
               <h3>Manage Members</h3>
-              <SearchableSelect
-                value={selectedTeamForMembers}
-                onChange={setSelectedTeamForMembers}
-                options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
-                placeholder="Select team"
-              />
+              {!selectedTeamId ? <p className="muted">Select a team in the sidebar first.</p> : null}
               <input
                 placeholder="user@email.com"
                 type="email"
@@ -2593,18 +2540,18 @@ function App() {
               />
               <button
                 className="button primary"
-                disabled={isSubmitting || !selectedTeamForMembers || !selectedTeamForMembersCanManage}
+                disabled={isSubmitting || !selectedTeamId || !selectedTeamCanManage}
                 type="submit"
               >
                 Add Member
               </button>
-              {!selectedTeamForMembersCanManage && selectedTeamForMembers ? (
+              {!selectedTeamCanManage && selectedTeamId ? (
                 <p className="muted">Team admin access required to manage members.</p>
               ) : null}
             </form>
 
             <div>
-              <h3>Members {selectedTeamForMembersName ? `- ${selectedTeamForMembersName}` : ""}</h3>
+              <h3>Members {selectedTeamName ? `- ${selectedTeamName}` : ""}</h3>
               {isMembersLoading ? <p className="muted">Loading members...</p> : null}
               {membersLoadError ? <p className="muted">{membersLoadError}</p> : null}
               {!isMembersLoading && !membersLoadError && teamMembers.length === 0 ? (
@@ -2630,13 +2577,13 @@ function App() {
                         onChange={(nextValue) => handleMemberRoleChange(membership.id, nextValue as TeamRole)}
                         options={TEAM_MEMBER_ROLE_OPTIONS}
                         placeholder="Select role"
-                        disabled={isSubmitting || !selectedTeamForMembersCanManage}
+                        disabled={isSubmitting || !selectedTeamCanManage}
                       />
                       <button
                         className="button secondary"
                         onClick={() => handleDeleteTeamMember(membership.id)}
                         type="button"
-                        disabled={isSubmitting || isCurrentUser || !selectedTeamForMembersCanManage}
+                        disabled={isSubmitting || isCurrentUser || !selectedTeamCanManage}
                         title={isCurrentUser ? "You cannot remove your own membership" : "Remove member"}
                       >
                         Remove

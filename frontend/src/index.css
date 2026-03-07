@@ -243,6 +243,21 @@ select {
   gap: 0.45rem;
 }
 
+.sidebar-team-selector {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.sidebar-team-selector .muted {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-team-select {
+  width: 100%;
+}
+
 .nav-item {
   border: 1px solid #a9c1d1;
   background: #fff;
@@ -418,7 +433,7 @@ select {
 
 .fixture-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.7rem;
   align-items: center;
   margin-bottom: 0.8rem;
@@ -432,9 +447,23 @@ select {
   margin-bottom: 0.8rem;
 }
 
+.player-toolbar.match-prep-toolbar {
+  grid-template-columns: 1fr;
+}
+
 .player-toolbar .button {
   justify-self: end;
   width: fit-content;
+}
+
+.match-prep-fixture-picker {
+  width: min(520px, 100%);
+}
+
+.match-prep-formation-row select {
+  width: auto;
+  min-width: 180px;
+  max-width: 260px;
 }
 
 .fixture-month-controls {
