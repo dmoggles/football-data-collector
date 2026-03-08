@@ -137,7 +137,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border-radius: 0.7rem;
   border: 1px solid var(--tl-border-soft);
@@ -437,6 +438,30 @@ select {
   font-size: 0.8rem;
 }
 
+.next-match-plan-status {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.coaching-note-textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.team-note-indicator {
+  margin-left: auto;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  background: rgba(35, 51, 66, 0.92);
+  border: 1px solid var(--tl-border-soft);
+  cursor: help;
+}
+
 .two-col {
   display: grid;
   gap: 1rem;
@@ -590,7 +615,16 @@ select {
 }
 
 .player-toolbar.match-prep-toolbar {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(260px, 520px) minmax(0, 1fr);
+}
+
+.match-prep-toolbar-actions {
+  display: flex;
+  width: 100%;
+  justify-self: stretch;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .player-toolbar .button {
@@ -599,7 +633,7 @@ select {
 }
 
 .match-prep-fixture-picker {
-  width: min(520px, 100%);
+  width: 100%;
 }
 
 .match-prep-formation-row select {
@@ -849,6 +883,23 @@ select {
   text-overflow: ellipsis;
 }
 
+.player-note-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-left: 0.28rem;
+  border-radius: 999px;
+  border: 1px solid rgba(180, 230, 255, 0.45);
+  background: rgba(33, 72, 101, 0.95);
+  color: #cbe9ff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 .prep-side {
   display: grid;
   align-content: start;
@@ -986,6 +1037,15 @@ select {
 
   .player-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .player-toolbar.match-prep-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .match-prep-toolbar-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .player-toolbar .button {

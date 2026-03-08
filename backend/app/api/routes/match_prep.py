@@ -8,6 +8,7 @@ from app.api.auth_deps import get_current_user
 from app.api.deps import get_db
 from app.api.entitlements import ensure_team_admin, get_team_or_404
 from app.models.club import Club
+from app.models.coaching_note import CoachingNote
 from app.models.match import Match
 from app.models.match_plan import MatchPlan
 from app.models.match_plan_player import MatchPlanPlayer
@@ -16,8 +17,11 @@ from app.models.match_plan_substitution_segment import MatchPlanSubstitutionSegm
 from app.models.player import Player
 from app.models.user import User
 from app.schemas.match_prep import (
+    CoachingNoteCreateRequest,
+    CoachingNoteResponse,
     MatchPrepFixtureResponse,
     MatchPrepPlanResponse,
+    MatchPrepPlanValidationResponse,
     MatchPrepPlanUpsertRequest,
     MatchPrepPlayerSelectionResponse,
     MatchPrepSubstitutionSegmentResponse,
@@ -26,6 +30,7 @@ from app.schemas.match_prep import (
 from app.services.formations import (
     get_formation_options,
     get_required_starting_count,
+    get_slot_role_map,
     get_slot_ids,
     is_allowed_formation,
 )
@@ -143,6 +148,269 @@ def build_plan_response(db: Session, match: Match, team_id: str, plan: MatchPlan
         players=player_responses,
         substitution_segments=substitution_segment_responses,
     )
+
+
+def parse_position_codes(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    normalized = value.upper().replace("/", ",").replace("|", ",")
+    parts = [part.strip() for part in normalized.split(",")]
+    return {part for part in parts if part}
+
+
+def build_slot_assignment(plan_players: list[MatchPlanPlayer]) -> dict[str, str]:
+    assignment: dict[str, str] = {}
+    for row in plan_players:
+        if row.lineup_slot:
+            assignment[row.lineup_slot] = row.player_id
+    return assignment
+
+
+def validate_segment_assignment(
+    *,
+    segment_number: int,
+    slot_assignment: dict[str, str],
+    allowed_slot_ids: list[str],
+    slot_role_map: dict[str, str],
+    players_by_id: dict[str, Player],
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    missing_slots = [slot_id for slot_id in allowed_slot_ids if slot_id not in slot_assignment]
+    if missing_slots:
+        errors.append(
+            f"Segment {segment_number}: missing players in slots {', '.join(missing_slots)}"
+        )
+
+    for slot_id in allowed_slot_ids:
+        player_id = slot_assignment.get(slot_id)
+        if not player_id:
+            continue
+        player = players_by_id.get(player_id)
+        if not player:
+            errors.append(f"Segment {segment_number}: unknown player assigned to {slot_id}")
+            continue
+        expected_role = slot_role_map.get(slot_id)
+        if not expected_role:
+            continue
+        player_positions = parse_position_codes(player.position)
+        if player_positions and expected_role not in player_positions:
+            warnings.append(
+                f"Segment {segment_number}: {player.display_name} "
+                f"({', '.join(sorted(player_positions))}) in {expected_role} slot"
+            )
+
+    return errors, warnings
+
+
+def build_coaching_note_response(db: Session, note: CoachingNote) -> CoachingNoteResponse:
+    player_name: str | None = None
+    if note.player_id:
+        player_name = db.scalar(select(Player.display_name).where(Player.id == note.player_id))
+    return CoachingNoteResponse(
+        id=note.id,
+        match_id=note.match_id,
+        team_id=note.team_id,
+        player_id=note.player_id,
+        player_name=player_name,
+        note_text=note.note_text,
+        created_at=note.created_at,
+    )
+
+
+@router.get("/plan/validate", response_model=MatchPrepPlanValidationResponse)
+def validate_match_prep_plan(
+    match_id: str = Query(...),
+    team_id: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MatchPrepPlanValidationResponse:
+    ensure_team_admin(db, team_id, user.id)
+    match = get_match_or_404(db, match_id)
+    ensure_match_contains_team(match, team_id)
+
+    plan = db.scalar(
+        select(MatchPlan).where(MatchPlan.match_id == match_id, MatchPlan.team_id == team_id)
+    )
+    if not plan:
+        return MatchPrepPlanValidationResponse(
+            match_id=match_id,
+            team_id=team_id,
+            valid=False,
+            errors=["No match plan saved for this fixture and team"],
+            warnings=[],
+        )
+
+    allowed_slot_ids = get_slot_ids(match.format, plan.formation)
+    slot_role_map = get_slot_role_map(match.format, plan.formation)
+    if not allowed_slot_ids:
+        return MatchPrepPlanValidationResponse(
+            match_id=match_id,
+            team_id=team_id,
+            valid=False,
+            errors=["Formation is invalid for this fixture format"],
+            warnings=[],
+        )
+
+    plan_players = db.scalars(
+        select(MatchPlanPlayer).where(MatchPlanPlayer.match_plan_id == plan.id)
+    ).all()
+    players = db.scalars(select(Player).where(Player.team_id == team_id)).all()
+    players_by_id = {player.id: player for player in players}
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    slot_assignment = build_slot_assignment(plan_players)
+    segment_errors, segment_warnings = validate_segment_assignment(
+        segment_number=1,
+        slot_assignment=slot_assignment,
+        allowed_slot_ids=allowed_slot_ids,
+        slot_role_map=slot_role_map,
+        players_by_id=players_by_id,
+    )
+    errors.extend(segment_errors)
+    warnings.extend(segment_warnings)
+
+    substitutions_by_segment: dict[str, list[MatchPlanSubstitution]] = {}
+    segments = db.scalars(
+        select(MatchPlanSubstitutionSegment)
+        .where(MatchPlanSubstitutionSegment.match_plan_id == plan.id)
+        .order_by(MatchPlanSubstitutionSegment.segment_order.asc())
+    ).all()
+    segment_ids = [segment.id for segment in segments]
+    if segment_ids:
+        substitutions = db.scalars(
+            select(MatchPlanSubstitution)
+            .where(MatchPlanSubstitution.segment_id.in_(segment_ids))
+            .order_by(MatchPlanSubstitution.created_at.asc())
+        ).all()
+        for row in substitutions:
+            substitutions_by_segment.setdefault(row.segment_id, []).append(row)
+
+    for segment in segments:
+        player_to_slot = {player_id: slot_id for slot_id, player_id in slot_assignment.items()}
+        for swap in substitutions_by_segment.get(segment.id, []):
+            out_slot = player_to_slot.get(swap.player_out_id)
+            if not out_slot:
+                errors.append(
+                    f"Segment {segment.segment_order + 2}: player_out {swap.player_out_id} is not on pitch"
+                )
+                continue
+            existing_in_slot = player_to_slot.get(swap.player_in_id)
+            if existing_in_slot:
+                slot_assignment.pop(existing_in_slot, None)
+            slot_assignment[out_slot] = swap.player_in_id
+            player_to_slot = {player_id: slot_id for slot_id, player_id in slot_assignment.items()}
+
+        segment_errors, segment_warnings = validate_segment_assignment(
+            segment_number=segment.segment_order + 2,
+            slot_assignment=slot_assignment,
+            allowed_slot_ids=allowed_slot_ids,
+            slot_role_map=slot_role_map,
+            players_by_id=players_by_id,
+        )
+        errors.extend(segment_errors)
+        warnings.extend(segment_warnings)
+
+    return MatchPrepPlanValidationResponse(
+        match_id=match_id,
+        team_id=team_id,
+        valid=len(errors) == 0,
+        errors=errors,
+        warnings=warnings,
+    )
+
+
+@router.get("/notes", response_model=list[CoachingNoteResponse])
+def list_coaching_notes(
+    match_id: str = Query(...),
+    team_id: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CoachingNoteResponse]:
+    ensure_team_admin(db, team_id, user.id)
+    match = get_match_or_404(db, match_id)
+    ensure_match_contains_team(match, team_id)
+
+    notes = db.scalars(
+        select(CoachingNote)
+        .where(CoachingNote.match_id == match_id, CoachingNote.team_id == team_id)
+        .order_by(CoachingNote.created_at.desc())
+    ).all()
+    return [build_coaching_note_response(db, note) for note in notes]
+
+
+@router.post("/notes", response_model=CoachingNoteResponse, status_code=status.HTTP_201_CREATED)
+def create_coaching_note(
+    payload: CoachingNoteCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CoachingNoteResponse:
+    ensure_team_admin(db, payload.team_id, user.id)
+    match = get_match_or_404(db, payload.match_id)
+    ensure_match_contains_team(match, payload.team_id)
+
+    player_id = payload.player_id.strip() if payload.player_id else None
+    if player_id:
+        player = db.scalar(select(Player).where(Player.id == player_id))
+        if not player or player.team_id != payload.team_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected player does not belong to this team",
+            )
+
+    normalized_text = payload.note_text.strip()
+    if not normalized_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Note text cannot be empty",
+        )
+
+    existing_note_query = select(CoachingNote).where(
+        CoachingNote.match_id == payload.match_id,
+        CoachingNote.team_id == payload.team_id,
+    )
+    if player_id:
+        existing_note_query = existing_note_query.where(CoachingNote.player_id == player_id)
+    else:
+        existing_note_query = existing_note_query.where(CoachingNote.player_id.is_(None))
+
+    note = db.scalar(existing_note_query)
+    if note:
+        note.note_text = normalized_text
+        note.author_user_id = user.id
+    else:
+        note = CoachingNote(
+            match_id=payload.match_id,
+            team_id=payload.team_id,
+            player_id=player_id,
+            author_user_id=user.id,
+            note_text=normalized_text,
+        )
+        db.add(note)
+    db.commit()
+    db.refresh(note)
+    return build_coaching_note_response(db, note)
+
+
+@router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_coaching_note(
+    note_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    note = db.scalar(select(CoachingNote).where(CoachingNote.id == note_id))
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coaching note not found")
+
+    ensure_team_admin(db, note.team_id, user.id)
+    match = get_match_or_404(db, note.match_id)
+    ensure_match_contains_team(match, note.team_id)
+
+    db.delete(note)
+    db.commit()
 
 
 @router.get("/fixtures", response_model=list[MatchPrepFixtureResponse])

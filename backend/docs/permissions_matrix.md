@@ -41,6 +41,9 @@ This document defines backend authorization expectations for current roles and s
 | Fixtures | `DELETE /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (admin on fixture team) | ✅ |
 | Match Prep | `GET /match-prep/fixtures?team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Match Prep | `GET /match-prep/plan?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Match Prep | `GET /match-prep/plan/validate?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Match Prep | `GET /match-prep/notes?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Match Prep | `POST /match-prep/notes` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Match Prep | `PUT /match-prep/plan` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Clubs | `POST /clubs/{club_id}/logo` | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Admin | `GET /admin/overview` | ❌ | ❌ | ❌ | ❌ | ✅ |

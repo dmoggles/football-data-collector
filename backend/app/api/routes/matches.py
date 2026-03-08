@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, delete, exists, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.api.auth_deps import get_current_user
 from app.api.deps import get_db
 from app.api.entitlements import ensure_team_admin, get_team_or_404
 from app.models.club import Club
+from app.models.coaching_note import CoachingNote
+from app.models.event import Event
 from app.models.match import Match
+from app.models.match_plan import MatchPlan
+from app.models.match_plan_player import MatchPlanPlayer
+from app.models.match_plan_substitution import MatchPlanSubstitution
+from app.models.match_plan_substitution_segment import MatchPlanSubstitutionSegment
+from app.models.match_squad import MatchSquad
 from app.models.team import Team
 from app.models.team_membership import TeamMembership, is_team_admin_role
 from app.models.user import User
@@ -262,6 +269,30 @@ def delete_match(
 ) -> Response:
     fixture = get_match_or_404(db, match_id)
     ensure_fixture_manage_access(db, fixture, user.id)
+
+    plan_id_subquery = select(MatchPlan.id).where(MatchPlan.match_id == match_id)
+    segment_id_subquery = select(MatchPlanSubstitutionSegment.id).where(
+        MatchPlanSubstitutionSegment.match_plan_id.in_(plan_id_subquery)
+    )
+
+    db.execute(
+        delete(MatchPlanSubstitution).where(
+            MatchPlanSubstitution.segment_id.in_(segment_id_subquery)
+        )
+    )
+    db.execute(
+        delete(MatchPlanSubstitutionSegment).where(
+            MatchPlanSubstitutionSegment.match_plan_id.in_(plan_id_subquery)
+        )
+    )
+    db.execute(
+        delete(MatchPlanPlayer).where(MatchPlanPlayer.match_plan_id.in_(plan_id_subquery))
+    )
+    db.execute(delete(MatchPlan).where(MatchPlan.match_id == match_id))
+
+    db.execute(delete(MatchSquad).where(MatchSquad.match_id == match_id))
+    db.execute(delete(Event).where(Event.match_id == match_id))
+    db.execute(delete(CoachingNote).where(CoachingNote.match_id == match_id))
     db.delete(fixture)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

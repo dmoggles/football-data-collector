@@ -187,3 +187,21 @@ export type MatchPrepPlan = {
   players: MatchPrepPlayerSelection[];
   substitution_segments: MatchPrepSubstitutionSegment[];
 };
+
+export type MatchPrepPlanValidation = {
+  match_id: string;
+  team_id: string;
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+};
+
+export type CoachingNote = {
+  id: string;
+  match_id: string;
+  team_id: string;
+  player_id: string | null;
+  player_name: string | null;
+  note_text: string;
+  created_at: string;
+};

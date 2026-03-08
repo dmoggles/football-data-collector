@@ -139,3 +139,20 @@ def get_slot_ids(match_format: str, formation: str) -> list[str]:
         for player_index, _ in enumerate(entries, start=1):
             slots.append(f"L{compact_line_index}_{player_index}")
     return slots
+
+
+def get_slot_role_map(match_format: str, formation: str) -> dict[str, str]:
+    formation_config = _formation_config(match_format, formation)
+    if not formation_config:
+        return {}
+
+    role_map: dict[str, str] = {"GK": "GK"}
+    compact_line_index = 0
+    for band in DEPTH_BANDS:
+        entries = formation_config["bands"][band]
+        if len(entries) == 0:
+            continue
+        compact_line_index += 1
+        for player_index, entry in enumerate(entries, start=1):
+            role_map[f"L{compact_line_index}_{player_index}"] = entry["role"].strip().upper()
+    return role_map

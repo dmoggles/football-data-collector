@@ -10,9 +10,11 @@ import {
   assignAdminTeamOwner,
   assignUserGlobalRole,
   changePassword,
+  createCoachingNote,
   createFixture,
   createAdminClub,
   createAdminTeam,
+  deleteCoachingNote,
   deleteAdminClub,
   deleteAdminTeam,
   deleteFixture,
@@ -24,8 +26,10 @@ import {
   getAdminOverview,
   getAdminAuditLogs,
   getMatchPrepPlan,
+  getMatchPrepPlanValidation,
   getMe,
   listFixtures,
+  listCoachingNotes,
   listMatchPrepFixtures,
   listPlayers,
   listTeamDirectory,
@@ -50,8 +54,10 @@ import type {
   AdminOverview,
   Fixture,
   MatchFormat,
+  CoachingNote,
   MatchPrepFixture,
   MatchPrepPlan,
+  MatchPrepPlanValidation,
   MatchPeriodFormat,
   Player,
   Team,
@@ -385,6 +391,9 @@ function App() {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [matchPrepFixtures, setMatchPrepFixtures] = useState<MatchPrepFixture[]>([]);
   const [matchPrepPlan, setMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
+  const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
+  const [nextMatchPlanValidation, setNextMatchPlanValidation] = useState<MatchPrepPlanValidation | null>(null);
+  const [isNextMatchPlanValidationLoading, setIsNextMatchPlanValidationLoading] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
@@ -419,6 +428,10 @@ function App() {
   const [selectedFixtureForMatchPrep, setSelectedFixtureForMatchPrep] = useState("");
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
+  const [isCoachingNoteComposerOpen, setIsCoachingNoteComposerOpen] = useState(false);
+  const [coachingNotePlayerId, setCoachingNotePlayerId] = useState("__team__");
+  const [coachingNoteText, setCoachingNoteText] = useState("");
+  const [matchPrepSegmentMinuteDrafts, setMatchPrepSegmentMinuteDrafts] = useState<Record<number, string>>({});
 
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>("data_enterer");
@@ -531,6 +544,43 @@ function App() {
       matchPrepPlan ? matchPrepPlan.players.filter((player) => !player.is_available && !player.lineup_slot) : [],
     [matchPrepPlan],
   );
+  const coachingNoteTargetOptions = useMemo(() => {
+    const options = [{ value: "__team__", label: "Team Note" }];
+    if (!matchPrepPlan) {
+      return options;
+    }
+    return [
+      ...options,
+      ...matchPrepPlan.players.map((player) => ({
+        value: player.player_id,
+        label: `${player.player_name}${player.shirt_number ? ` #${player.shirt_number}` : ""}`,
+      })),
+    ];
+  }, [matchPrepPlan]);
+  const latestTeamNote = useMemo(
+    () => coachingNotes.find((note) => !note.player_id) ?? null,
+    [coachingNotes],
+  );
+  const latestPlayerNoteById = useMemo(() => {
+    const mapping: Record<string, CoachingNote> = {};
+    for (const note of coachingNotes) {
+      if (!note.player_id) {
+        continue;
+      }
+      if (!mapping[note.player_id]) {
+        mapping[note.player_id] = note;
+      }
+    }
+    return mapping;
+  }, [coachingNotes]);
+  const coachingNoteByTarget = useMemo(() => {
+    const mapping: Record<string, CoachingNote> = {};
+    for (const note of coachingNotes) {
+      const key = note.player_id ?? "__team__";
+      mapping[key] = note;
+    }
+    return mapping;
+  }, [coachingNotes]);
 
   const playersForSelectedTeam = useMemo(() => {
     if (!selectedTeamId) {
@@ -556,7 +606,11 @@ function App() {
 
     const next = upcoming[0];
     if (!next || !next.kickoff) {
-      return { title: "No upcoming fixtures", subtitle: "Schedule a fixture to see it here." };
+      return {
+        title: "No upcoming fixtures",
+        subtitle: "Schedule a fixture to see it here.",
+        fixtureId: "",
+      };
     }
 
     const fixture = next.fixture;
@@ -573,6 +627,7 @@ function App() {
         hour: "2-digit",
         minute: "2-digit",
       }),
+      fixtureId: fixture.id,
     };
   }, [fixtures, selectedTeamId]);
   const filteredAdminTeams = useMemo(() => {
@@ -784,6 +839,15 @@ function App() {
     setMatchPrepPlan(plan);
   }, []);
 
+  const loadCoachingNotes = useCallback(async (matchId: string, teamId: string) => {
+    if (!matchId || !teamId) {
+      setCoachingNotes([]);
+      return;
+    }
+    const notes = await listCoachingNotes(matchId, teamId);
+    setCoachingNotes(notes);
+  }, []);
+
   const loadAdminData = useCallback(async () => {
     setIsAdminLoading(true);
     try {
@@ -864,11 +928,54 @@ function App() {
   }, [loadMatchPrepPlan, section, selectedFixtureForMatchPrep, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
+    if (!user || section !== "match_prep") {
+      return;
+    }
+    if (!selectedFixtureForMatchPrep || !selectedTeamId || !selectedTeamCanManage) {
+      setCoachingNotes([]);
+      setIsCoachingNoteComposerOpen(false);
+      return;
+    }
+    void loadCoachingNotes(selectedFixtureForMatchPrep, selectedTeamId);
+  }, [loadCoachingNotes, section, selectedFixtureForMatchPrep, selectedTeamCanManage, selectedTeamId, user]);
+
+  useEffect(() => {
     if (!user || !selectedTeamId) {
       return;
     }
     void loadFixturesForTeam(selectedTeamId);
   }, [loadFixturesForTeam, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!user || !selectedTeamId || !nextMatchTile.fixtureId || !selectedTeamCanManage) {
+      setNextMatchPlanValidation(null);
+      setIsNextMatchPlanValidationLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsNextMatchPlanValidationLoading(true);
+    void getMatchPrepPlanValidation(nextMatchTile.fixtureId, selectedTeamId)
+      .then((result) => {
+        if (!cancelled) {
+          setNextMatchPlanValidation(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNextMatchPlanValidation(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsNextMatchPlanValidationLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nextMatchTile.fixtureId, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
     if (teams.length === 0) {
@@ -948,6 +1055,75 @@ function App() {
       setIsSubmitting(false);
     }
   };
+
+  const resetCoachingNoteComposer = () => {
+    setCoachingNotePlayerId("__team__");
+    setCoachingNoteText("");
+    setIsCoachingNoteComposerOpen(false);
+  };
+
+  const openCoachingNoteComposer = () => {
+    const defaultTarget = "__team__";
+    setCoachingNotePlayerId(defaultTarget);
+    setCoachingNoteText(coachingNoteByTarget[defaultTarget]?.note_text ?? "");
+    setIsCoachingNoteComposerOpen(true);
+  };
+
+  const handleCreateCoachingNote = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedFixtureForMatchPrep || !selectedTeamId || !coachingNoteText.trim()) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await createCoachingNote({
+        match_id: selectedFixtureForMatchPrep,
+        team_id: selectedTeamId,
+        player_id: coachingNotePlayerId === "__team__" ? null : coachingNotePlayerId,
+        note_text: coachingNoteText.trim(),
+      });
+      await loadCoachingNotes(selectedFixtureForMatchPrep, selectedTeamId);
+      resetCoachingNoteComposer();
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to add coaching note");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteCoachingNote = async () => {
+    const activeNote = coachingNoteByTarget[coachingNotePlayerId];
+    if (!activeNote || !selectedFixtureForMatchPrep || !selectedTeamId) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await deleteCoachingNote(activeNote.id);
+      await loadCoachingNotes(selectedFixtureForMatchPrep, selectedTeamId);
+      setCoachingNoteText("");
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to delete coaching note");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isCoachingNoteComposerOpen) {
+      return;
+    }
+    setCoachingNoteText(coachingNoteByTarget[coachingNotePlayerId]?.note_text ?? "");
+  }, [coachingNoteByTarget, coachingNotePlayerId, isCoachingNoteComposerOpen]);
 
   const assignMatchPrepPlayerToSlot = (playerId: string, slotId: string) => {
     setMatchPrepPlan((current) => {
@@ -1067,6 +1243,26 @@ function App() {
         ),
       };
     });
+  };
+
+  const updateMatchPrepSubstitutionSegmentMinuteDraft = (segmentIndex: number, value: string) => {
+    setMatchPrepSegmentMinuteDrafts((current) => ({ ...current, [segmentIndex]: value }));
+  };
+
+  const commitMatchPrepSubstitutionSegmentMinuteDraft = (
+    segmentIndex: number,
+    fallbackMinute: number,
+  ) => {
+    if (!matchPrepPlan) {
+      return;
+    }
+    const rawValue = matchPrepSegmentMinuteDrafts[segmentIndex] ?? String(fallbackMinute);
+    const parsed = Number.parseInt(rawValue, 10);
+    const nextMinute = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(matchPrepPlan.total_match_minutes - 1, parsed))
+      : fallbackMinute;
+    updateMatchPrepSubstitutionSegmentEndMinute(segmentIndex, nextMinute);
+    setMatchPrepSegmentMinuteDrafts((current) => ({ ...current, [segmentIndex]: String(nextMinute) }));
   };
 
   const removeMatchPrepSubstitutionSegment = (segmentIndex: number) => {
@@ -1411,7 +1607,11 @@ function App() {
   };
 
   const handleDeleteFixture = async (fixtureId: string) => {
-    if (!window.confirm("Delete this fixture?")) {
+    if (
+      !window.confirm(
+        "Delete this fixture?\n\nThis will permanently remove the fixture and all related data, including match prep plans, substitution plans, coaching notes, squads, and collected events.",
+      )
+    ) {
       return;
     }
     setError(null);
@@ -2038,6 +2238,8 @@ function App() {
                 setSelectedTeamId(nextValue);
                 setSelectedFixtureForMatchPrep("");
                 setMatchPrepPlan(null);
+                setCoachingNotes([]);
+                resetCoachingNoteComposer();
                 resetFixtureForm();
                 resetPlayerComposer();
               }}
@@ -2101,6 +2303,48 @@ function App() {
                 <h3>Next Match</h3>
                 <p>{nextMatchTile.title}</p>
                 <span className="muted">{nextMatchTile.subtitle}</span>
+                {nextMatchTile.fixtureId ? (
+                  <div className="next-match-plan-status">
+                    {isNextMatchPlanValidationLoading ? (
+                      <p className="muted">Checking match plan...</p>
+                    ) : null}
+                    {!selectedTeamCanManage ? (
+                      <p className="muted">Team admin access required to validate plan.</p>
+                    ) : null}
+                    {selectedTeamCanManage && !isNextMatchPlanValidationLoading && nextMatchPlanValidation ? (
+                      <>
+                        {nextMatchPlanValidation.valid && nextMatchPlanValidation.warnings.length === 0 ? (
+                          <p className="muted">Match plan is valid.</p>
+                        ) : null}
+                        {!nextMatchPlanValidation.valid ? (
+                          <p className="muted">
+                            Match plan invalid:{" "}
+                            {nextMatchPlanValidation.errors[0] ?? "one or more segments are incomplete."}
+                          </p>
+                        ) : null}
+                        {nextMatchPlanValidation.valid && nextMatchPlanValidation.warnings.length > 0 ? (
+                          <p className="muted">
+                            Match plan valid with warning:{" "}
+                            {nextMatchPlanValidation.warnings[0] ?? "some players are out of position."}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => {
+                        setSection("match_prep");
+                        if (nextMatchTile.fixtureId) {
+                          setSelectedFixtureForMatchPrep(nextMatchTile.fixtureId);
+                        }
+                      }}
+                      disabled={!selectedTeamCanManage || !nextMatchTile.fixtureId}
+                    >
+                      Open Match Prep
+                    </button>
+                  </div>
+                ) : null}
               </article>
             </div>
           </section>
@@ -2478,14 +2722,45 @@ function App() {
         {section === "match_prep" ? (
           <section className="section-card">
             <div className="player-toolbar match-prep-toolbar">
-              <button
-                className="button primary"
-                type="button"
-                disabled={isSubmitting || !matchPrepPlan}
-                onClick={handleSaveMatchPrepPlan}
-              >
-                Save Match Plan
-              </button>
+              <div className="stack-form match-prep-fixture-picker">
+                <SearchableSelect
+                  value={selectedFixtureForMatchPrep}
+                  onChange={setSelectedFixtureForMatchPrep}
+                  options={matchPrepFixtures.map((fixture) => ({
+                    value: fixture.id,
+                    label: `${fixture.opponent_team_name}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleString()}` : ""}`,
+                  }))}
+                  placeholder="Select upcoming fixture"
+                  disabled={!selectedTeamId || !selectedTeamCanManage}
+                />
+              </div>
+              <div className="match-prep-toolbar-actions">
+                {latestTeamNote ? (
+                  <span
+                    className="team-note-indicator"
+                    title={`Team note: ${latestTeamNote.note_text}`}
+                    aria-label="Team note"
+                  >
+                    📝
+                  </span>
+                ) : null}
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isSubmitting || !matchPrepPlan}
+                  onClick={openCoachingNoteComposer}
+                >
+                  Add Coaching Note
+                </button>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={isSubmitting || !matchPrepPlan}
+                  onClick={handleSaveMatchPrepPlan}
+                >
+                  Save Match Plan
+                </button>
+              </div>
             </div>
             {ownedTeams.length === 0 ? (
               <p className="muted">No team admin access yet. Ask a super admin to assign you to a team.</p>
@@ -2496,18 +2771,6 @@ function App() {
             {!selectedTeamCanManage && selectedTeamId ? (
               <p className="muted">Team admin access required for match prep on this team.</p>
             ) : null}
-            <div className="stack-form match-prep-fixture-picker" style={{ marginTop: "0.6rem" }}>
-              <SearchableSelect
-                value={selectedFixtureForMatchPrep}
-                onChange={setSelectedFixtureForMatchPrep}
-                options={matchPrepFixtures.map((fixture) => ({
-                  value: fixture.id,
-                  label: `${fixture.opponent_team_name}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleString()}` : ""}`,
-                }))}
-                placeholder="Select upcoming fixture"
-                disabled={!selectedTeamId || !selectedTeamCanManage}
-              />
-            </div>
             {!selectedFixtureForMatchPrep && selectedTeamId && selectedTeamCanManage ? (
               <p className="muted">No upcoming fixtures for {selectedTeamName}.</p>
             ) : null}
@@ -2602,6 +2865,9 @@ function App() {
                         const mismatch = assignedPlayer
                           ? isPositionMismatch(assignedPlayer.position, slot.role)
                           : false;
+                        const assignedPlayerNote = assignedPlayer
+                          ? latestPlayerNoteById[assignedPlayer.player_id]
+                          : null;
                         return (
                           <button
                             key={slot.id}
@@ -2612,6 +2878,7 @@ function App() {
                               matchPrepDragTarget === slot.id ? "drag-over" : ""
                             }`}
                             style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
+                            title={assignedPlayerNote ? assignedPlayerNote.note_text : undefined}
                             onDoubleClick={() => {
                               if (assignedPlayer) {
                                 moveMatchPrepPlayerToBench(assignedPlayer.player_id);
@@ -2654,6 +2921,15 @@ function App() {
                             {assignedPlayer ? (
                               <span className="pitch-slot-player">
                                 {assignedPlayer.player_name}
+                                {assignedPlayerNote ? (
+                                  <span
+                                    className="player-note-badge"
+                                    aria-label="Has coaching note"
+                                    title="Has coaching note"
+                                  >
+                                    N
+                                  </span>
+                                ) : null}
                               </span>
                             ) : (
                               <span className="pitch-slot-player muted">Drop Player</span>
@@ -2688,11 +2964,15 @@ function App() {
                       {matchPrepBenchPlayers.length === 0 ? <p className="muted">Drop players here</p> : null}
                       <div className="prep-player-grid">
                         {matchPrepBenchPlayers.map((player) => (
+                          (() => {
+                            const playerNote = latestPlayerNoteById[player.player_id];
+                            return (
                           <button
                             key={player.player_id}
                             type="button"
                             className="prep-player-tile"
                             draggable
+                            title={playerNote ? playerNote.note_text : undefined}
                             onDragStart={(event) => {
                               event.dataTransfer.setData("text/plain", player.player_id);
                               event.dataTransfer.effectAllowed = "move";
@@ -2700,12 +2980,25 @@ function App() {
                             onDragEnd={() => setMatchPrepDragTarget("")}
                             onDoubleClick={() => moveMatchPrepPlayerOutOfSquad(player.player_id)}
                           >
-                            <strong>{player.player_name}</strong>
+                            <strong>
+                              {player.player_name}
+                              {playerNote ? (
+                                <span
+                                  className="player-note-badge"
+                                  aria-label="Has coaching note"
+                                  title="Has coaching note"
+                                >
+                                  N
+                                </span>
+                              ) : null}
+                            </strong>
                             <span>
                               {player.shirt_number ? `#${player.shirt_number}` : "No #"}
                               {player.position ? ` · ${player.position}` : ""}
                             </span>
                           </button>
+                            );
+                          })()
                         ))}
                       </div>
                     </div>
@@ -2732,11 +3025,15 @@ function App() {
                       {matchPrepUnavailablePlayers.length === 0 ? <p className="muted">Double-click a bench tile</p> : null}
                       <div className="prep-player-grid">
                         {matchPrepUnavailablePlayers.map((player) => (
+                          (() => {
+                            const playerNote = latestPlayerNoteById[player.player_id];
+                            return (
                           <button
                             key={player.player_id}
                             type="button"
                             className="prep-player-tile is-muted"
                             draggable
+                            title={playerNote ? playerNote.note_text : undefined}
                             onDragStart={(event) => {
                               event.dataTransfer.setData("text/plain", player.player_id);
                               event.dataTransfer.effectAllowed = "move";
@@ -2744,12 +3041,25 @@ function App() {
                             onDragEnd={() => setMatchPrepDragTarget("")}
                             onDoubleClick={() => moveMatchPrepPlayerToBench(player.player_id)}
                           >
-                            <strong>{player.player_name}</strong>
+                            <strong>
+                              {player.player_name}
+                              {playerNote ? (
+                                <span
+                                  className="player-note-badge"
+                                  aria-label="Has coaching note"
+                                  title="Has coaching note"
+                                >
+                                  N
+                                </span>
+                              ) : null}
+                            </strong>
                             <span>
                               {player.shirt_number ? `#${player.shirt_number}` : "No #"}
                               {player.position ? ` · ${player.position}` : ""}
                             </span>
                           </button>
+                            );
+                          })()
                         ))}
                       </div>
                     </div>
@@ -2790,16 +3100,31 @@ function App() {
                             &prime;
                           </span>
                           <input
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
                             min={1}
                             max={matchPrepPlan.total_match_minutes - 1}
-                            value={segment.end_minute}
+                            value={matchPrepSegmentMinuteDrafts[segmentIndex] ?? String(segment.end_minute)}
                             onChange={(event) =>
-                              updateMatchPrepSubstitutionSegmentEndMinute(
-                                segmentIndex,
-                                Number(event.target.value || 0),
-                              )
+                              updateMatchPrepSubstitutionSegmentMinuteDraft(segmentIndex, event.target.value)
                             }
+                            onBlur={() =>
+                              commitMatchPrepSubstitutionSegmentMinuteDraft(segmentIndex, segment.end_minute)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitMatchPrepSubstitutionSegmentMinuteDraft(segmentIndex, segment.end_minute);
+                                event.currentTarget.blur();
+                              } else if (event.key === "Escape") {
+                                setMatchPrepSegmentMinuteDrafts((current) => {
+                                  const next = { ...current };
+                                  delete next[segmentIndex];
+                                  return next;
+                                });
+                                event.currentTarget.blur();
+                              }
+                            }}
                             placeholder="End minute"
                             className="prep-segment-minute-input"
                           />
@@ -2840,6 +3165,53 @@ function App() {
                     );
                   })}
                 </div>
+              </div>
+            ) : null}
+            {isCoachingNoteComposerOpen && selectedFixtureForMatchPrep && selectedTeamId ? (
+              <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+                <form className="fixture-composer" onSubmit={handleCreateCoachingNote}>
+                  <h3>{coachingNoteByTarget[coachingNotePlayerId] ? "Edit Coaching Note" : "Add Coaching Note"}</h3>
+                  <p className="muted">{selectedTeamName}</p>
+                  <SearchableSelect
+                    value={coachingNotePlayerId}
+                    onChange={setCoachingNotePlayerId}
+                    options={coachingNoteTargetOptions}
+                    placeholder="Note target"
+                  />
+                  <textarea
+                    className="coaching-note-textarea"
+                    placeholder="Enter coaching note..."
+                    value={coachingNoteText}
+                    onChange={(event) => setCoachingNoteText(event.target.value)}
+                    rows={5}
+                    required
+                  />
+                  <div className="member-actions">
+                    <button
+                      className="button primary"
+                      type="submit"
+                      disabled={isSubmitting || !coachingNoteText.trim()}
+                    >
+                      {coachingNoteByTarget[coachingNotePlayerId] ? "Update Note" : "Save Note"}
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isSubmitting || !coachingNoteByTarget[coachingNotePlayerId]}
+                      onClick={handleDeleteCoachingNote}
+                    >
+                      Delete Note
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={resetCoachingNoteComposer}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
               </div>
             ) : null}
           </section>

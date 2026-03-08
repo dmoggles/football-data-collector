@@ -1,6 +1,7 @@
 import type {
   AdminAuditLogEntry,
   AdminOverview,
+  CoachingNote,
   AddTeamMemberPayload,
   AuthPayload,
   Fixture,
@@ -8,6 +9,7 @@ import type {
   GlobalRole,
   MatchPrepFixture,
   MatchPrepPlan,
+  MatchPrepPlanValidation,
   Player,
   PlayerPayload,
   Team,
@@ -189,6 +191,14 @@ export async function getMatchPrepPlan(matchId: string, teamId: string): Promise
   return request<MatchPrepPlan>(`/match-prep/plan?${params}`, "GET");
 }
 
+export async function getMatchPrepPlanValidation(
+  matchId: string,
+  teamId: string,
+): Promise<MatchPrepPlanValidation> {
+  const params = `match_id=${encodeURIComponent(matchId)}&team_id=${encodeURIComponent(teamId)}`;
+  return request<MatchPrepPlanValidation>(`/match-prep/plan/validate?${params}`, "GET");
+}
+
 export async function upsertMatchPrepPlan(payload: {
   match_id: string;
   team_id: string;
@@ -209,6 +219,24 @@ export async function upsertMatchPrepPlan(payload: {
   }>;
 }): Promise<MatchPrepPlan> {
   return request<MatchPrepPlan>("/match-prep/plan", "PUT", payload);
+}
+
+export async function listCoachingNotes(matchId: string, teamId: string): Promise<CoachingNote[]> {
+  const params = `match_id=${encodeURIComponent(matchId)}&team_id=${encodeURIComponent(teamId)}`;
+  return request<CoachingNote[]>(`/match-prep/notes?${params}`, "GET");
+}
+
+export async function createCoachingNote(payload: {
+  match_id: string;
+  team_id: string;
+  player_id: string | null;
+  note_text: string;
+}): Promise<CoachingNote> {
+  return request<CoachingNote>("/match-prep/notes", "POST", payload);
+}
+
+export async function deleteCoachingNote(noteId: string): Promise<void> {
+  await request<void>(`/match-prep/notes/${noteId}`, "DELETE");
 }
 
 export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {

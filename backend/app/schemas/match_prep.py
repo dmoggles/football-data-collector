@@ -76,3 +76,28 @@ class MatchPrepPlanResponse(BaseModel):
     formation_options: list[str]
     players: list[MatchPrepPlayerSelectionResponse]
     substitution_segments: list[MatchPrepSubstitutionSegmentResponse]
+
+
+class MatchPrepPlanValidationResponse(BaseModel):
+    match_id: str
+    team_id: str
+    valid: bool
+    errors: list[str]
+    warnings: list[str]
+
+
+class CoachingNoteCreateRequest(BaseModel):
+    match_id: str = Field(min_length=1, max_length=36)
+    team_id: str = Field(min_length=1, max_length=36)
+    player_id: str | None = Field(default=None, min_length=1, max_length=36)
+    note_text: str = Field(min_length=1, max_length=2000)
+
+
+class CoachingNoteResponse(BaseModel):
+    id: str
+    match_id: str
+    team_id: str
+    player_id: str | None
+    player_name: str | None
+    note_text: str
+    created_at: datetime

@@ -1,5 +1,6 @@
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.club import Club
+from app.models.coaching_note import CoachingNote
 from app.models.event import Event
 from app.models.global_role import GlobalRole
 from app.models.match import Match
@@ -20,6 +21,7 @@ __all__ = [
     "GlobalRole",
     "Event",
     "Club",
+    "CoachingNote",
     "Match",
     "MatchPlan",
     "MatchPlanPlayer",
