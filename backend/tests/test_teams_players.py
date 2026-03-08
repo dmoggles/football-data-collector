@@ -48,7 +48,7 @@ def _create_club_as_super_admin(club_name: str) -> None:
     assert create_club_response.status_code in [201, 409]
 
 
-def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
+def test_team_creator_gets_manager_membership_and_can_manage_players() -> None:
     club_name = f"Arrows-{uuid.uuid4().hex[:6]}"
     team_name = f"FC-{uuid.uuid4().hex[:4]}"
     _create_club_as_super_admin(club_name)
@@ -61,12 +61,12 @@ def test_team_creator_gets_admin_membership_and_can_manage_players() -> None:
     )
     assert create_team_response.status_code == 201
     team_id = create_team_response.json()["id"]
-    assert create_team_response.json()["my_role"] == "team_admin"
+    assert create_team_response.json()["my_role"] == "manager"
 
     members_response = client.get(f"/teams/{team_id}/members")
     assert members_response.status_code == 200
     assert len(members_response.json()) == 1
-    assert members_response.json()[0]["role"] == "team_admin"
+    assert members_response.json()[0]["role"] == "manager"
 
     create_player_response = client.post(
         "/players",

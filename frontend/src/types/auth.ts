@@ -1,4 +1,4 @@
-export type TeamRole = "admin" | "team_admin" | "data_enterer" | "coach" | "parent";
+export type TeamRole = "admin" | "team_admin" | "manager" | "data_enterer" | "coach" | "parent";
 export type GlobalRole = "super_admin";
 
 export type User = {

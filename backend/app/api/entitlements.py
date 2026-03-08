@@ -66,7 +66,7 @@ def require_team_admin(
 
 
 def count_team_admins(db: Session, team_id: str) -> int:
-    roles = [TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
+    roles = [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
     query = select(func.count()).select_from(TeamMembership).where(
         TeamMembership.team_id == team_id,
         TeamMembership.role.in_(roles),

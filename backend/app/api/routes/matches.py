@@ -91,7 +91,7 @@ def ensure_fixture_manage_access(db: Session, match: Match, user_id: str) -> Non
         )
     )
     if not bool((home_role and is_team_admin_role(home_role)) or (away_role and is_team_admin_role(away_role))):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team admin access required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
 
 
 def ensure_fixture_create_access(db: Session, home_team_id: str, away_team_id: str, user_id: str) -> None:
@@ -108,7 +108,7 @@ def ensure_fixture_create_access(db: Session, home_team_id: str, away_team_id: s
         )
     )
     if not bool((home_role and is_team_admin_role(home_role)) or (away_role and is_team_admin_role(away_role))):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team admin access required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
 
 
 @router.get("", response_model=list[MatchResponse])

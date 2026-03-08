@@ -7,12 +7,12 @@ This document defines backend authorization expectations for current roles and s
 - `anonymous`: no authenticated session.
 - `authenticated`: logged-in user with no required elevated role.
 - `team_member`: user has any membership on a given team.
-- `team_admin`: user has `team_admin` membership on a given team.
+- `manager`: user has `manager` membership on a given team.
 - `super_admin`: platform-level global role (`global_roles.role = super_admin`).
 
 ## Route Matrix
 
-| Area | Route | anonymous | authenticated | team_member | team_admin | super_admin |
+| Area | Route | anonymous | authenticated | team_member | manager | super_admin |
 |---|---|---:|---:|---:|---:|---:|
 | Auth | `POST /auth/register` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Auth | `POST /auth/login` | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -36,9 +36,9 @@ This document defines backend authorization expectations for current roles and s
 | Players | `DELETE /players/{player_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Fixtures | `GET /matches` | ❌ | ✅ (teams user belongs to) | ✅ | ✅ | ✅ |
 | Fixtures | `GET /matches?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Fixtures | `POST /matches` | ❌ | ❌ | ❌ | ✅ (admin on home or away team) | ✅ |
-| Fixtures | `PATCH /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (admin on fixture + target home team) | ✅ |
-| Fixtures | `DELETE /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (admin on fixture team) | ✅ |
+| Fixtures | `POST /matches` | ❌ | ❌ | ❌ | ✅ (manager on home or away team) | ✅ |
+| Fixtures | `PATCH /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (manager on fixture + target home team) | ✅ |
+| Fixtures | `DELETE /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (manager on fixture team) | ✅ |
 | Match Prep | `GET /match-prep/fixtures?team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Match Prep | `GET /match-prep/plan?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Match Prep | `GET /match-prep/plan/validate?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |

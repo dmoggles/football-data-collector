@@ -51,7 +51,7 @@ def build_team_member_response(db: Session, membership: TeamMembership) -> TeamM
         team_id=membership.team_id,
         user_id=membership.user_id,
         user_email=user_email,
-        role=membership.role,
+        role=normalize_team_role(membership.role),
     )
 
 
@@ -374,12 +374,12 @@ def assign_team_admin(
         )
     )
     if membership:
-        membership.role = TeamRole.TEAM_ADMIN.value
+        membership.role = TeamRole.MANAGER.value
     else:
         membership = TeamMembership(
             team_id=team_id,
             user_id=target_user.id,
-            role=normalize_team_role(TeamRole.TEAM_ADMIN.value),
+            role=normalize_team_role(TeamRole.MANAGER.value),
         )
         db.add(membership)
     db.flush()
@@ -394,7 +394,7 @@ def assign_team_admin(
             "team_id": team_id,
             "target_user_id": target_user.id,
             "target_user_email": target_user.email,
-            "assigned_role": TeamRole.TEAM_ADMIN.value,
+            "assigned_role": TeamRole.MANAGER.value,
         },
     )
 
@@ -421,7 +421,7 @@ def remove_team_admin(
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
     if not is_team_admin_role(membership.role):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is not a team admin")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is not a manager")
 
     write_audit_log(
         db=db,

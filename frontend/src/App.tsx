@@ -105,7 +105,7 @@ const KICKOFF_TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
   return { value, label: value };
 });
 const TEAM_MEMBER_ROLE_OPTIONS = [
-  { value: "team_admin", label: "Admin" },
+  { value: "manager", label: "Manager" },
   { value: "data_enterer", label: "Data Enterer" },
 ];
 const CALENDAR_WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -123,7 +123,7 @@ const ADMIN_SUB_NAV_ITEMS: Array<{ id: AdminSection; label: string }> = [
 ];
 
 function isTeamAdminRole(role: TeamRole): boolean {
-  return role === "team_admin" || role === "admin";
+  return role === "manager" || role === "team_admin" || role === "admin";
 }
 
 function fixtureStatusClass(status: string): string {
@@ -1889,7 +1889,7 @@ function App() {
       if (requestError instanceof Error) {
         setError(requestError.message);
       } else {
-        setError("Failed to assign team admin");
+        setError("Failed to assign manager");
       }
     } finally {
       setIsSubmitting(false);
@@ -1909,7 +1909,7 @@ function App() {
       if (requestError instanceof Error) {
         setError(requestError.message);
       } else {
-        setError("Failed to remove team admin");
+        setError("Failed to remove manager");
       }
     } finally {
       setIsSubmitting(false);
@@ -2309,7 +2309,7 @@ function App() {
                       <p className="muted">Checking match plan...</p>
                     ) : null}
                     {!selectedTeamCanManage ? (
-                      <p className="muted">Team admin access required to validate plan.</p>
+                      <p className="muted">Manager access required to validate plan.</p>
                     ) : null}
                     {selectedTeamCanManage && !isNextMatchPlanValidationLoading && nextMatchPlanValidation ? (
                       <>
@@ -2435,7 +2435,7 @@ function App() {
 
             {!selectedTeamId ? <p className="muted">Select a team to view fixtures.</p> : null}
             {!selectedTeamCanManage && selectedTeamId ? (
-              <p className="muted">Team admin access required to add or edit fixtures.</p>
+              <p className="muted">Manager access required to add or edit fixtures.</p>
             ) : null}
             {selectedTeamId ? (
               <>
@@ -2709,7 +2709,7 @@ function App() {
                     onClick={() => handleDeleteTeam(team.id)}
                     type="button"
                     disabled={isSubmitting || (team.my_role ? !isTeamAdminRole(team.my_role) : false)}
-                    title={team.my_role && !isTeamAdminRole(team.my_role) ? "Team admin access required" : "Delete team"}
+                    title={team.my_role && !isTeamAdminRole(team.my_role) ? "Manager access required" : "Delete team"}
                   >
                     Delete
                   </button>
@@ -2763,13 +2763,13 @@ function App() {
               </div>
             </div>
             {ownedTeams.length === 0 ? (
-              <p className="muted">No team admin access yet. Ask a super admin to assign you to a team.</p>
+              <p className="muted">No manager access yet. Ask a super admin to assign you to a team.</p>
             ) : null}
             {!selectedTeamId && ownedTeams.length > 0 ? (
               <p className="muted">Select a team in the sidebar to start match prep.</p>
             ) : null}
             {!selectedTeamCanManage && selectedTeamId ? (
-              <p className="muted">Team admin access required for match prep on this team.</p>
+              <p className="muted">Manager access required for match prep on this team.</p>
             ) : null}
             {!selectedFixtureForMatchPrep && selectedTeamId && selectedTeamCanManage ? (
               <p className="muted">No upcoming fixtures for {selectedTeamName}.</p>
@@ -3233,7 +3233,7 @@ function App() {
             </div>
             {!selectedTeamId ? <p className="muted">Select a team to view players.</p> : null}
             {!selectedTeamCanManage && selectedTeamId ? (
-              <p className="muted">Team admin access required to add players.</p>
+              <p className="muted">Manager access required to add players.</p>
             ) : null}
 
             <div>
@@ -3351,7 +3351,7 @@ function App() {
                 Add Member
               </button>
               {!selectedTeamCanManage && selectedTeamId ? (
-                <p className="muted">Team admin access required to manage members.</p>
+                <p className="muted">Manager access required to manage members.</p>
               ) : null}
             </form>
 
@@ -3562,7 +3562,7 @@ function App() {
                   </form>
                 </div>
                 <div>
-                  <h3>Assign Team Admin</h3>
+                  <h3>Assign Manager</h3>
                   <form className="stack-form" onSubmit={handleAssignTeamAdmin}>
                     <SearchableSelect
                       value={adminAssignTeamId}
@@ -3586,7 +3586,7 @@ function App() {
                       disabled={isSubmitting || !adminAssignTeamId}
                       type="submit"
                     >
-                      Assign Team Admin
+                      Assign Manager
                     </button>
                   </form>
                 </div>
@@ -3681,7 +3681,7 @@ function App() {
                               disabled={isSubmitting}
                               onClick={() => focusAssignTeamAdmin(adminTeam.id)}
                             >
-                              Add Admin
+                              Add Manager
                             </button>
                             <button
                               className="button secondary"

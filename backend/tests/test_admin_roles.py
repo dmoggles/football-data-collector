@@ -102,7 +102,7 @@ def test_super_admin_cannot_delete_club_with_teams() -> None:
     assert delete_response.status_code == 409
 
 
-def test_super_admin_can_assign_team_admin_for_existing_team() -> None:
+def test_super_admin_can_assign_manager_for_existing_team() -> None:
     super_email, super_password = _register("super-assign")
     _grant_super_admin(super_email)
     target_email, _ = _register("target-admin")
@@ -123,7 +123,7 @@ def test_super_admin_can_assign_team_admin_for_existing_team() -> None:
         json={"user_email": target_email},
     )
     assert response.status_code == 200
-    assert response.json()["role"] == "team_admin"
+    assert response.json()["role"] == "manager"
     assert response.json()["user_email"] == target_email
 
 
@@ -197,7 +197,7 @@ def test_super_admin_can_delete_team_without_match_data() -> None:
     assert delete_response.status_code == 204
 
 
-def test_super_admin_can_remove_team_admin() -> None:
+def test_super_admin_can_remove_manager() -> None:
     super_email, super_password = _register("super-remove-admin")
     _grant_super_admin(super_email)
     target_email, _ = _register("target-remove-admin")

@@ -16,7 +16,7 @@ from app.core.club_logos import build_club_logo_url
 from app.models.club import Club
 from app.models.player import Player
 from app.models.team import Team
-from app.models.team_membership import TeamMembership, TeamRole
+from app.models.team_membership import TeamMembership, TeamRole, normalize_team_role
 from app.models.user import User
 from app.schemas.team import (
     TeamCreateRequest,
@@ -44,7 +44,7 @@ def build_team_member_response(db: Session, membership: TeamMembership) -> TeamM
         team_id=membership.team_id,
         user_id=membership.user_id,
         user_email=user_email,
-        role=membership.role,
+        role=normalize_team_role(membership.role),
     )
 
 
@@ -101,7 +101,7 @@ def list_teams(
     )
     rows = db.execute(query).all()
     return [
-        build_team_response(team, club_name, logo_filename, role)
+        build_team_response(team, club_name, logo_filename, normalize_team_role(role))
         for team, club_name, logo_filename, role in rows
     ]
 
@@ -134,7 +134,7 @@ def create_team(
     db.add(team)
     db.flush()
 
-    membership = TeamMembership(team_id=team.id, user_id=user.id, role=TeamRole.TEAM_ADMIN.value)
+    membership = TeamMembership(team_id=team.id, user_id=user.id, role=TeamRole.MANAGER.value)
     db.add(membership)
 
     try:
@@ -147,7 +147,7 @@ def create_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name, club.logo_filename, membership.role)
+    return build_team_response(team, club.name, club.logo_filename, normalize_team_role(membership.role))
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
@@ -174,7 +174,7 @@ def update_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name, club.logo_filename, acting_membership.role)
+    return build_team_response(team, club.name, club.logo_filename, normalize_team_role(acting_membership.role))
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -257,18 +257,18 @@ def update_team_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
 
     if (
-        membership.role in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value]
-        and payload.role.value not in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value]
+        membership.role in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
+        and payload.role.value not in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
         and count_team_admins(db, team_id) <= 1
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Team must have at least one admin",
+            detail="Team must have at least one manager",
         )
 
     if (
         membership.user_id == acting_membership.user_id
-        and payload.role.value not in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value]
+        and payload.role.value not in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -296,12 +296,12 @@ def delete_team_member(
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
 
-    if membership.role in [TeamRole.ADMIN.value, TeamRole.TEAM_ADMIN.value] and count_team_admins(
+    if membership.role in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value] and count_team_admins(
         db, team_id
     ) <= 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Team must have at least one admin",
+            detail="Team must have at least one manager",
         )
 
     if membership.user_id == acting_membership.user_id:
