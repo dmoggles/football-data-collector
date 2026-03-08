@@ -2426,7 +2426,7 @@ function App() {
                     Upload Club Logo
                     <input
                       type="file"
-                      accept="image/png,image/jpeg,image/webp"
+                      accept="image/png,image/webp"
                       disabled={isSubmitting || !isSuperAdmin}
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
@@ -3109,7 +3109,7 @@ function App() {
                           {clubLogoUploadClubId === club.id ? "Uploading..." : "Logo"}
                           <input
                             type="file"
-                            accept="image/png,image/jpeg,image/webp"
+                            accept="image/png,image/webp"
                             disabled={isSubmitting}
                             onChange={(event) => {
                               const file = event.target.files?.[0] ?? null;

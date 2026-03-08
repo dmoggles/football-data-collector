@@ -14,7 +14,6 @@ router = APIRouter(prefix="/clubs", tags=["clubs"])
 
 ALLOWED_CONTENT_TYPES = {
     "image/png": "png",
-    "image/jpeg": "jpg",
     "image/webp": "webp",
 }
 MAX_LOGO_BYTES = 5 * 1024 * 1024
@@ -41,7 +40,7 @@ async def upload_club_logo(
     if not extension:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported image format. Use PNG, JPG, or WebP.",
+            detail="Unsupported image format. Use PNG or WebP.",
         )
 
     raw = await logo.read()
