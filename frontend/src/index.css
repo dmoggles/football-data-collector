@@ -355,6 +355,10 @@ textarea {
   gap: 0.95rem;
 }
 
+.content-shell.in-active-match {
+  padding-top: 0.65rem;
+}
+
 .content-header {
   border: 1px solid var(--tl-border-soft);
   background: var(--tl-surface-1);
@@ -442,6 +446,92 @@ textarea {
   margin-top: 0.55rem;
   display: grid;
   gap: 0.4rem;
+}
+
+.collection-start-row {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.collection-screen {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  min-height: 0;
+}
+
+.collection-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.collection-clock {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--tl-accent);
+}
+
+.collection-pitch-wrap {
+  position: relative;
+  border: 1px solid var(--tl-border-soft);
+  border-radius: 0.8rem;
+  background: rgba(21, 34, 46, 0.92);
+  padding: 0.55rem;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.collection-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.collection-section-card {
+  height: calc(100dvh - 190px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.collection-pitch-wrap .pitch-surface {
+  width: min(100%, calc((100dvh - 280px) * 0.64));
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.collection-pitch-overlay {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.7rem;
+  z-index: 4;
+  border: 1px solid var(--tl-border-soft);
+  border-radius: 0.6rem;
+  background: rgba(8, 18, 27, 0.78);
+  backdrop-filter: blur(3px);
+  padding: 0.35rem 0.5rem;
+  display: grid;
+  gap: 0.05rem;
+  pointer-events: none;
+}
+
+.collection-pitch-overlay strong {
+  font-size: 0.72rem;
+  color: var(--tl-silver);
+}
+
+.collection-pitch-overlay small {
+  font-size: 0.62rem;
+  color: var(--tl-muted);
 }
 
 .coaching-note-textarea {
@@ -1050,6 +1140,15 @@ textarea {
 
   .player-toolbar .button {
     width: fit-content;
+  }
+
+  .collection-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .collection-section-card {
+    height: calc(100dvh - 140px);
   }
 
   .prep-layout {

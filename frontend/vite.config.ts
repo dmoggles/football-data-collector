@@ -13,6 +13,7 @@ export default defineConfig({
       "/teams": "http://127.0.0.1:8000",
       "/players": "http://127.0.0.1:8000",
       "/matches": "http://127.0.0.1:8000",
+      "/collection-sessions": "http://127.0.0.1:8000",
       "/match-prep": "http://127.0.0.1:8000",
       "/admin": "http://127.0.0.1:8000",
       "/clubs": "http://127.0.0.1:8000",

@@ -25,9 +25,11 @@ import {
   deleteTeamMember,
   getAdminOverview,
   getAdminAuditLogs,
+  getCollectionSession,
   getMatchPrepPlan,
   getMatchPrepPlanValidation,
   getMe,
+  listActiveCollectionSessions,
   listFixtures,
   listCoachingNotes,
   listMatchPrepFixtures,
@@ -41,6 +43,9 @@ import {
   resolveApiAssetUrl,
   register,
   revokeUserGlobalRole,
+  startCollectionSession,
+  startCollectionSessionPeriod,
+  endCollectionSessionPeriod,
   uploadClubLogo,
   updateFixture,
   upsertMatchPrepPlan,
@@ -55,6 +60,7 @@ import type {
   Fixture,
   MatchFormat,
   CoachingNote,
+  CollectionSession,
   MatchPrepFixture,
   MatchPrepPlan,
   MatchPrepPlanValidation,
@@ -68,13 +74,14 @@ import type {
 } from "./types/auth";
 
 type AuthMode = "login" | "register";
-type Section = "dashboard" | "fixtures" | "match_prep" | "players" | "teams" | "members" | "settings" | "admin";
+type Section = "dashboard" | "collection" | "fixtures" | "match_prep" | "players" | "teams" | "members" | "settings" | "admin";
 type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
 type FixtureVenue = "home" | "away";
 
 const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"];
 const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
   { id: "dashboard", label: "Dashboard", shortLabel: "D" },
+  { id: "collection", label: "Match", shortLabel: "L" },
   { id: "fixtures", label: "Fixtures", shortLabel: "F" },
   { id: "match_prep", label: "Match Prep", shortLabel: "MP" },
   { id: "players", label: "Players", shortLabel: "P" },
@@ -169,6 +176,24 @@ function toQuarterHourTime(date: Date): string {
   const hours = String(rounded.getHours()).padStart(2, "0");
   const mins = String(rounded.getMinutes()).padStart(2, "0");
   return `${hours}:${mins}`;
+}
+
+function formatClock(totalSeconds: number): string {
+  const safe = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function buildCollectionSessionWsUrl(sessionId: string, teamId: string): string {
+  const apiBase = (import.meta.env.VITE_API_BASE_URL?.trim() ?? "").replace(/\/+$/, "");
+  let origin = apiBase || window.location.origin;
+  if (!apiBase) {
+    // In local dev, frontend runs on :5173 while backend websocket is on :8000.
+    origin = origin.replace(":5173", ":8000");
+  }
+  const wsBase = origin.replace(/^http/i, "ws");
+  return `${wsBase}/collection-sessions/${encodeURIComponent(sessionId)}/ws?team_id=${encodeURIComponent(teamId)}`;
 }
 
 function timeToMinutes(timeValue: string): number | null {
@@ -390,6 +415,13 @@ function App() {
   const [teamDirectory, setTeamDirectory] = useState<TeamDirectory[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [matchPrepFixtures, setMatchPrepFixtures] = useState<MatchPrepFixture[]>([]);
+  const [activeCollectionSessions, setActiveCollectionSessions] = useState<CollectionSession[]>([]);
+  const [selectedCollectionSessionId, setSelectedCollectionSessionId] = useState("");
+  const [collectionSessionLive, setCollectionSessionLive] = useState<CollectionSession | null>(null);
+  const [collectionSessionSocketState, setCollectionSessionSocketState] = useState<"idle" | "connecting" | "live">(
+    "idle",
+  );
+  const [selectedCollectionFixtureId, setSelectedCollectionFixtureId] = useState("");
   const [matchPrepPlan, setMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
   const [nextMatchPlanValidation, setNextMatchPlanValidation] = useState<MatchPrepPlanValidation | null>(null);
@@ -457,6 +489,7 @@ function App() {
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const adminAssignEmailInputRef = useRef<HTMLInputElement | null>(null);
+  const collectionSessionWsRef = useRef<WebSocket | null>(null);
 
   const navItems = useMemo(
     () => (isSuperAdmin ? [...BASE_NAV_ITEMS, ADMIN_NAV_ITEM] : BASE_NAV_ITEMS),
@@ -581,6 +614,24 @@ function App() {
     }
     return mapping;
   }, [coachingNotes]);
+  const startableCollectionFixtures = useMemo(() => {
+    if (!selectedTeamId) {
+      return [] as Fixture[];
+    }
+    return fixtures.filter(
+      (fixture) =>
+        (fixture.home_team_id === selectedTeamId || fixture.away_team_id === selectedTeamId) &&
+        fixture.status.toLowerCase() !== "cancelled",
+    );
+  }, [fixtures, selectedTeamId]);
+  const selectedCollectionSession = useMemo(() => {
+    if (!selectedCollectionSessionId) {
+      return activeCollectionSessions[0] ?? null;
+    }
+    return activeCollectionSessions.find((sessionRow) => sessionRow.id === selectedCollectionSessionId) ?? null;
+  }, [activeCollectionSessions, selectedCollectionSessionId]);
+  const isActiveMatchSession =
+    section === "collection" && !!collectionSessionLive && collectionSessionLive.state === "live";
 
   const playersForSelectedTeam = useMemo(() => {
     if (!selectedTeamId) {
@@ -848,6 +899,20 @@ function App() {
     setCoachingNotes(notes);
   }, []);
 
+  const loadActiveCollectionSessions = useCallback(async (teamId: string) => {
+    if (!teamId) {
+      setActiveCollectionSessions([]);
+      setSelectedCollectionSessionId("");
+      setCollectionSessionLive(null);
+      return;
+    }
+    const rows = await listActiveCollectionSessions(teamId);
+    setActiveCollectionSessions(rows);
+    setSelectedCollectionSessionId((current) =>
+      rows.some((item) => item.id === current) ? current : rows[0]?.id || "",
+    );
+  }, []);
+
   const loadAdminData = useCallback(async () => {
     setIsAdminLoading(true);
     try {
@@ -947,6 +1012,34 @@ function App() {
   }, [loadFixturesForTeam, selectedTeamId, user]);
 
   useEffect(() => {
+    if (!user || !selectedTeamId) {
+      setActiveCollectionSessions([]);
+      setSelectedCollectionSessionId("");
+      setCollectionSessionLive(null);
+      return;
+    }
+    void loadActiveCollectionSessions(selectedTeamId);
+    const interval = window.setInterval(() => {
+      void loadActiveCollectionSessions(selectedTeamId);
+    }, 15000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [loadActiveCollectionSessions, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!startableCollectionFixtures.length) {
+      setSelectedCollectionFixtureId("");
+      return;
+    }
+    setSelectedCollectionFixtureId((current) =>
+      startableCollectionFixtures.some((fixture) => fixture.id === current)
+        ? current
+        : startableCollectionFixtures[0].id,
+    );
+  }, [startableCollectionFixtures]);
+
+  useEffect(() => {
     if (!user || !selectedTeamId || !nextMatchTile.fixtureId || !selectedTeamCanManage) {
       setNextMatchPlanValidation(null);
       setIsNextMatchPlanValidationLoading(false);
@@ -978,6 +1071,57 @@ function App() {
   }, [nextMatchTile.fixtureId, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
+    if (isActiveMatchSession) {
+      setSidebarCollapsed(true);
+    }
+  }, [isActiveMatchSession]);
+
+  useEffect(() => {
+    const sessionId = selectedCollectionSession?.id ?? "";
+    if (!user || section !== "collection" || !selectedTeamId || !sessionId) {
+      setCollectionSessionSocketState("idle");
+      setCollectionSessionLive(null);
+      if (collectionSessionWsRef.current) {
+        collectionSessionWsRef.current.close();
+        collectionSessionWsRef.current = null;
+      }
+      return;
+    }
+
+    setCollectionSessionSocketState("connecting");
+    const ws = new WebSocket(buildCollectionSessionWsUrl(sessionId, selectedTeamId));
+    collectionSessionWsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as CollectionSession;
+        setCollectionSessionLive(payload);
+        setCollectionSessionSocketState("live");
+      } catch {
+        // ignore malformed payload
+      }
+    };
+    ws.onclose = () => {
+      if (collectionSessionWsRef.current === ws) {
+        setCollectionSessionSocketState("idle");
+      }
+    };
+
+    void getCollectionSession(sessionId, selectedTeamId)
+      .then((snapshot) => setCollectionSessionLive(snapshot))
+      .catch(() => {
+        setCollectionSessionLive(null);
+      });
+
+    return () => {
+      if (collectionSessionWsRef.current === ws) {
+        collectionSessionWsRef.current = null;
+      }
+      ws.close();
+    };
+  }, [selectedCollectionSession?.id, section, selectedTeamId, user]);
+
+  useEffect(() => {
     if (teams.length === 0) {
       setSelectedTeamId("");
       return;
@@ -1000,6 +1144,102 @@ function App() {
         ? current.filter((item) => item !== positionCode)
         : [...current, positionCode],
     );
+  };
+
+  const handleStartCollectionSession = async () => {
+    if (!selectedTeamId || !selectedCollectionFixtureId) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const created = await startCollectionSession({
+        match_id: selectedCollectionFixtureId,
+        team_id: selectedTeamId,
+      });
+      await loadActiveCollectionSessions(selectedTeamId);
+      setSelectedCollectionSessionId(created.id);
+      setSection("collection");
+    } catch (requestError) {
+      if (requestError instanceof Error && requestError.message.includes("Confirm to continue")) {
+        const confirmStart = window.confirm(`${requestError.message}\n\nStart anyway?`);
+        if (confirmStart) {
+          const created = await startCollectionSession({
+            match_id: selectedCollectionFixtureId,
+            team_id: selectedTeamId,
+            confirm_off_schedule: true,
+          });
+          await loadActiveCollectionSessions(selectedTeamId);
+          setSelectedCollectionSessionId(created.id);
+          setSection("collection");
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to start collection session");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEndCollectionPeriod = async () => {
+    if (!selectedTeamId || !selectedCollectionSessionId) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const updated = await endCollectionSessionPeriod(selectedCollectionSessionId, { team_id: selectedTeamId });
+      setCollectionSessionLive(updated);
+      await loadActiveCollectionSessions(selectedTeamId);
+    } catch (requestError) {
+      if (requestError instanceof Error && requestError.message.includes("Confirm to end early")) {
+        const confirmEnd = window.confirm(`${requestError.message}\n\nEnd period now?`);
+        if (confirmEnd) {
+          const updated = await endCollectionSessionPeriod(
+            selectedCollectionSessionId,
+            { team_id: selectedTeamId },
+            true,
+          );
+          setCollectionSessionLive(updated);
+          await loadActiveCollectionSessions(selectedTeamId);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to end period");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStartNextCollectionPeriod = async () => {
+    if (!selectedTeamId || !selectedCollectionSessionId) {
+      return;
+    }
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const updated = await startCollectionSessionPeriod(selectedCollectionSessionId, { team_id: selectedTeamId });
+      setCollectionSessionLive(updated);
+      await loadActiveCollectionSessions(selectedTeamId);
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to start next period");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSaveMatchPrepPlan = async () => {
@@ -2253,8 +2493,9 @@ function App() {
         {!sidebarCollapsed ? <p className="sidebar-user">{user.email}</p> : null}
       </aside>
 
-      <section className="content-shell">
-        <header className="content-header">
+      <section className={`content-shell ${isActiveMatchSession ? "in-active-match" : ""}`}>
+        {!isActiveMatchSession ? (
+          <header className="content-header">
           <div className="content-brand">
             <img src="/assets/branding/logo1.png" alt="TapLine logo" className="content-brand-logo" />
             <div>
@@ -2276,7 +2517,8 @@ function App() {
               Log Out
             </button>
           </div>
-        </header>
+          </header>
+        ) : null}
 
         {error ? <p className="error-banner">{error}</p> : null}
 
@@ -2346,7 +2588,130 @@ function App() {
                   </div>
                 ) : null}
               </article>
+              <article>
+                <h3>Live Match</h3>
+                {!selectedTeamId ? <p className="muted">Select a team.</p> : null}
+                {selectedTeamId && activeCollectionSessions.length === 0 ? (
+                  <p className="muted">No live collection session.</p>
+                ) : null}
+                {activeCollectionSessions[0] ? (
+                  <>
+                    <p>
+                      {activeCollectionSessions[0].fixture_label} · P{activeCollectionSessions[0].period_number}/
+                      {activeCollectionSessions[0].total_periods}
+                    </p>
+                    <span className="muted">{formatClock(activeCollectionSessions[0].elapsed_seconds)}</span>
+                    <div style={{ marginTop: "0.45rem" }}>
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => {
+                          setSelectedCollectionSessionId(activeCollectionSessions[0].id);
+                          setSection("collection");
+                        }}
+                      >
+                        Go To Match Screen
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+                {selectedTeamCanManage ? (
+                  <div className="collection-start-row">
+                    <SearchableSelect
+                      value={selectedCollectionFixtureId}
+                      onChange={setSelectedCollectionFixtureId}
+                      options={startableCollectionFixtures.map((fixture) => {
+                        const opposition =
+                          fixture.home_team_id === selectedTeamId
+                            ? `${fixture.away_club_name} ${fixture.away_team_name}`
+                            : `${fixture.home_club_name} ${fixture.home_team_name}`;
+                        return {
+                          value: fixture.id,
+                          label: `${opposition}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleString()}` : ""}`,
+                        };
+                      })}
+                      placeholder="Select fixture"
+                      disabled={!selectedTeamId || startableCollectionFixtures.length === 0}
+                    />
+                    <button
+                      className="button primary"
+                      type="button"
+                      disabled={!selectedTeamId || !selectedCollectionFixtureId || isSubmitting}
+                      onClick={handleStartCollectionSession}
+                    >
+                      Start Game
+                    </button>
+                  </div>
+                ) : null}
+              </article>
             </div>
+          </section>
+        ) : null}
+
+        {section === "collection" ? (
+          <section className="section-card collection-section-card">
+            {!selectedTeamId ? <p className="muted">Select a team to open match screen.</p> : null}
+            {selectedTeamId ? (
+              <div className="collection-screen">
+                <div className="collection-header-row">
+                  <SearchableSelect
+                    value={selectedCollectionSessionId}
+                    onChange={setSelectedCollectionSessionId}
+                    options={activeCollectionSessions.map((sessionRow) => ({
+                      value: sessionRow.id,
+                      label: `${sessionRow.fixture_label} · P${sessionRow.period_number}/${sessionRow.total_periods}`,
+                    }))}
+                    placeholder="Select active session"
+                    disabled={activeCollectionSessions.length === 0}
+                  />
+                  <span className="muted">
+                    Socket: {collectionSessionSocketState === "live" ? "Live" : collectionSessionSocketState}
+                  </span>
+                </div>
+                {collectionSessionLive ? (
+                  <>
+                    <div className="collection-pitch-wrap">
+                      <PitchDiagram format={collectionSessionLive.format} />
+                      <div className="collection-pitch-overlay">
+                        <strong>
+                          P{collectionSessionLive.period_number}/{collectionSessionLive.total_periods}
+                        </strong>
+                        <span className="collection-clock">{formatClock(collectionSessionLive.current_period_elapsed_seconds)}</span>
+                        <small>{collectionSessionLive.fixture_label}</small>
+                      </div>
+                    </div>
+                    <div className="collection-actions">
+                      {collectionSessionLive.can_end_period && selectedTeamCanManage ? (
+                        <button
+                          className="button primary"
+                          type="button"
+                          onClick={handleEndCollectionPeriod}
+                          disabled={isSubmitting}
+                        >
+                          End Period
+                        </button>
+                      ) : null}
+                      {collectionSessionLive.can_start_next_period && selectedTeamCanManage ? (
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={handleStartNextCollectionPeriod}
+                          disabled={isSubmitting}
+                        >
+                          Start Period
+                        </button>
+                      ) : null}
+                      {collectionSessionLive.state === "ended" ? (
+                        <p className="muted">Session completed.</p>
+                      ) : null}
+                      {!selectedTeamCanManage ? <p className="muted">Read-only for data entry role.</p> : null}
+                    </div>
+                  </>
+                ) : (
+                  <p className="muted">No active session selected.</p>
+                )}
+              </div>
+            ) : null}
           </section>
         ) : null}
 

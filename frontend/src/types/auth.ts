@@ -196,6 +196,26 @@ export type MatchPrepPlanValidation = {
   warnings: string[];
 };
 
+export type CollectionSession = {
+  id: string;
+  match_id: string;
+  team_id: string;
+  fixture_label: string;
+  kickoff_at: string | null;
+  format: MatchFormat;
+  state: string;
+  period_number: number;
+  total_periods: number;
+  period_length_minutes: number;
+  elapsed_seconds: number;
+  current_period_elapsed_seconds: number;
+  is_period_running: boolean;
+  can_end_period: boolean;
+  can_start_next_period: boolean;
+  next_period_available: boolean;
+  off_schedule_warning: string | null;
+};
+
 export type CoachingNote = {
   id: string;
   match_id: string;

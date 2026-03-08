@@ -2,6 +2,7 @@ import type {
   AdminAuditLogEntry,
   AdminOverview,
   CoachingNote,
+  CollectionSession,
   AddTeamMemberPayload,
   AuthPayload,
   Fixture,
@@ -237,6 +238,52 @@ export async function createCoachingNote(payload: {
 
 export async function deleteCoachingNote(noteId: string): Promise<void> {
   await request<void>(`/match-prep/notes/${noteId}`, "DELETE");
+}
+
+export async function listActiveCollectionSessions(teamId: string): Promise<CollectionSession[]> {
+  return request<CollectionSession[]>(
+    `/collection-sessions/active?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
+export async function startCollectionSession(payload: {
+  match_id: string;
+  team_id: string;
+  confirm_off_schedule?: boolean;
+}): Promise<CollectionSession> {
+  return request<CollectionSession>("/collection-sessions/start", "POST", payload);
+}
+
+export async function getCollectionSession(sessionId: string, teamId: string): Promise<CollectionSession> {
+  return request<CollectionSession>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
+export async function endCollectionSessionPeriod(
+  sessionId: string,
+  payload: { team_id: string },
+  confirmEarly?: boolean,
+): Promise<CollectionSession> {
+  const params = confirmEarly ? "?confirm_early=true" : "";
+  return request<CollectionSession>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}/end-period${params}`,
+    "POST",
+    payload,
+  );
+}
+
+export async function startCollectionSessionPeriod(
+  sessionId: string,
+  payload: { team_id: string },
+): Promise<CollectionSession> {
+  return request<CollectionSession>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}/start-period`,
+    "POST",
+    payload,
+  );
 }
 
 export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {
