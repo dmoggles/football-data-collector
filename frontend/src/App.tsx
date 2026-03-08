@@ -5,6 +5,7 @@ import "./index.css";
 import { GoalMouthDiagram } from "./components/GoalMouthDiagram";
 import { PitchDiagram } from "./components/PitchDiagram";
 import { getGoalDimensions, getGoalWidthSpanPct } from "./domain/goalDimensions";
+import { predictLikelyPlayerId } from "./domain/eventPredictions";
 import { getFormationSlots } from "./domain/formations";
 import type { FormationSlot } from "./domain/formations";
 import {
@@ -735,6 +736,27 @@ function App() {
       return a.display_name.localeCompare(b.display_name);
     });
   }, [collectionMatchPrepPlan, playersForSelectedTeam, selectedTeamId]);
+  const collectionFormationSlots = useMemo(
+    () =>
+      collectionMatchPrepPlan
+        ? getFormationSlots(collectionMatchPrepPlan.format, collectionMatchPrepPlan.formation)
+        : [],
+    [collectionMatchPrepPlan],
+  );
+  const collectionLineupCandidates = useMemo(() => {
+    if (!collectionMatchPrepPlan || collectionFormationSlots.length === 0) {
+      return [] as Array<{ playerId: string; slot: (typeof collectionFormationSlots)[number] }>;
+    }
+    const slotById = new Map(collectionFormationSlots.map((slot) => [slot.id, slot]));
+    const allowedPlayerIds = new Set(collectionEventPlayers.map((player) => player.id));
+    return collectionMatchPrepPlan.players
+      .filter((player) => player.in_matchday_squad && !!player.lineup_slot && allowedPlayerIds.has(player.player_id))
+      .map((player) => {
+        const slot = slotById.get(player.lineup_slot ?? "");
+        return slot ? { playerId: player.player_id, slot } : null;
+      })
+      .filter((row): row is { playerId: string; slot: (typeof collectionFormationSlots)[number] } => !!row);
+  }, [collectionEventPlayers, collectionFormationSlots, collectionMatchPrepPlan]);
 
   const dashboardStats = useMemo(
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
@@ -1401,7 +1423,13 @@ function App() {
     setPendingEventPitchPoint({ xPct, yPct });
     setEventComposerType("shot");
     setEventComposerGoalPoint(null);
-    setEventComposerPlayerId("");
+    const predictedPlayerId = predictLikelyPlayerId({
+      eventKind: "shot",
+      xPct,
+      yPct,
+      lineup: collectionLineupCandidates,
+    });
+    setEventComposerPlayerId(predictedPlayerId ?? "");
     setIsEventComposerOpen(true);
   };
 
@@ -2945,6 +2973,7 @@ function App() {
                           </button>
                         ))}
                       </div>
+                      <p className="muted">Closest tactical fit is preselected; tap another number to override.</p>
                       {collectionEventPlayers.length === 0 ? (
                         <p className="muted">No matchday squad players available for this fixture.</p>
                       ) : null}
