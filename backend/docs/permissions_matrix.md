@@ -18,8 +18,10 @@ This document defines backend authorization expectations for current roles and s
 | Auth | `POST /auth/login` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Auth | `POST /auth/logout` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Auth | `GET /auth/me` | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Auth | `POST /auth/change-password` | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Health | `GET /health` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Teams | `GET /teams` | ❌ | ✅ (own teams only) | ✅ | ✅ | ✅ |
+| Teams | `GET /teams/directory` | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Teams | `POST /teams` | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Teams | `PATCH /teams/{team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Teams | `DELETE /teams/{team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
@@ -32,6 +34,15 @@ This document defines backend authorization expectations for current roles and s
 | Players | `POST /players` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Players | `PATCH /players/{player_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Players | `DELETE /players/{player_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Fixtures | `GET /matches` | ❌ | ✅ (teams user belongs to) | ✅ | ✅ | ✅ |
+| Fixtures | `GET /matches?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Fixtures | `POST /matches` | ❌ | ❌ | ❌ | ✅ (admin on home or away team) | ✅ |
+| Fixtures | `PATCH /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (admin on fixture + target home team) | ✅ |
+| Fixtures | `DELETE /matches/{match_id}` | ❌ | ❌ | ❌ | ✅ (admin on fixture team) | ✅ |
+| Match Prep | `GET /match-prep/fixtures?team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Match Prep | `GET /match-prep/plan?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Match Prep | `PUT /match-prep/plan` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Clubs | `POST /clubs/{club_id}/logo` | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Admin | `GET /admin/overview` | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Admin | `GET /admin/audit-logs` | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Admin | `POST /admin/clubs` | ❌ | ❌ | ❌ | ❌ | ✅ |
