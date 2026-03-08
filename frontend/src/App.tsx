@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, FormEvent } from "react";
+import type { DragEvent, FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import "./index.css";
+import { GoalMouthDiagram } from "./components/GoalMouthDiagram";
 import { PitchDiagram } from "./components/PitchDiagram";
+import { getGoalDimensions, getGoalWidthSpanPct } from "./domain/goalDimensions";
 import { getFormationSlots } from "./domain/formations";
 import type { FormationSlot } from "./domain/formations";
 import {
@@ -10,6 +12,7 @@ import {
   assignAdminTeamOwner,
   assignUserGlobalRole,
   changePassword,
+  createCollectionEvent,
   createCoachingNote,
   createFixture,
   createAdminClub,
@@ -30,6 +33,7 @@ import {
   getMatchPrepPlanValidation,
   getMe,
   listActiveCollectionSessions,
+  listCollectionEvents,
   listFixtures,
   listCoachingNotes,
   listMatchPrepFixtures,
@@ -60,6 +64,7 @@ import type {
   Fixture,
   MatchFormat,
   CoachingNote,
+  CollectionEvent,
   CollectionSession,
   MatchPrepFixture,
   MatchPrepPlan,
@@ -418,6 +423,13 @@ function App() {
   const [activeCollectionSessions, setActiveCollectionSessions] = useState<CollectionSession[]>([]);
   const [selectedCollectionSessionId, setSelectedCollectionSessionId] = useState("");
   const [collectionSessionLive, setCollectionSessionLive] = useState<CollectionSession | null>(null);
+  const [collectionEvents, setCollectionEvents] = useState<CollectionEvent[]>([]);
+  const [collectionMatchPrepPlan, setCollectionMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
+  const [isEventComposerOpen, setIsEventComposerOpen] = useState(false);
+  const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
+  const [eventComposerType, setEventComposerType] = useState<"shot">("shot");
+  const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
+  const [eventComposerGoalPoint, setEventComposerGoalPoint] = useState<{ y: number; z: number } | null>(null);
   const [collectionSessionSocketState, setCollectionSessionSocketState] = useState<"idle" | "connecting" | "live">(
     "idle",
   );
@@ -630,6 +642,58 @@ function App() {
     }
     return activeCollectionSessions.find((sessionRow) => sessionRow.id === selectedCollectionSessionId) ?? null;
   }, [activeCollectionSessions, selectedCollectionSessionId]);
+  const currentPeriodShotEvents = useMemo(
+    () =>
+      collectionEvents.filter(
+        (row) => row.event_kind === "shot" && row.period_number === (collectionSessionLive?.period_number ?? 1),
+      ),
+    [collectionEvents, collectionSessionLive?.period_number],
+  );
+  const selectedCollectionGoalDimensions = useMemo(
+    () => getGoalDimensions(collectionSessionLive?.format as MatchFormat | undefined),
+    [collectionSessionLive?.format],
+  );
+  const selectedCollectionGoalWindow = useMemo(() => {
+    if (!selectedCollectionGoalDimensions) {
+      return null;
+    }
+    const goalWidthSpanPct = getGoalWidthSpanPct(
+      selectedCollectionGoalDimensions.width_ft,
+      selectedCollectionGoalDimensions.pitch_width_m,
+    );
+    const leftY = 50 - goalWidthSpanPct / 2;
+    const rightY = 50 + goalWidthSpanPct / 2;
+    return {
+      leftY,
+      rightY,
+      goalHeightFt: selectedCollectionGoalDimensions.height_ft,
+      goalWidthSpanPct,
+    };
+  }, [selectedCollectionGoalDimensions]);
+  const eventOutcomeOptions = useMemo(() => {
+    if (!eventComposerGoalPoint) {
+      return ["miss", "post", "save", "goal"] as const;
+    }
+    if (!selectedCollectionGoalWindow) {
+      return ["miss", "post", "save", "goal"] as const;
+    }
+    const { y, z } = eventComposerGoalPoint;
+    const outsideGoalFrame =
+      y < selectedCollectionGoalWindow.leftY ||
+      y > selectedCollectionGoalWindow.rightY ||
+      z > selectedCollectionGoalWindow.goalHeightFt;
+    if (outsideGoalFrame) {
+      return ["miss"] as const;
+    }
+    const postZone =
+      Math.abs(y - selectedCollectionGoalWindow.leftY) <= 1.2 ||
+      Math.abs(y - selectedCollectionGoalWindow.rightY) <= 1.2 ||
+      Math.abs(z - selectedCollectionGoalWindow.goalHeightFt) <= 0.6;
+    if (postZone) {
+      return ["post", "save", "goal"] as const;
+    }
+    return ["save", "goal"] as const;
+  }, [eventComposerGoalPoint, selectedCollectionGoalWindow]);
   const isActiveMatchSession =
     section === "collection" && !!collectionSessionLive && collectionSessionLive.state === "live";
 
@@ -639,6 +703,38 @@ function App() {
     }
     return players.filter((player) => player.team_id === selectedTeamId);
   }, [players, selectedTeamId]);
+  const collectionEventPlayers = useMemo(() => {
+    if (!selectedTeamId) {
+      return [] as Player[];
+    }
+    if (!collectionMatchPrepPlan) {
+      return playersForSelectedTeam;
+    }
+    const knownPlayerById = new Map(playersForSelectedTeam.map((player) => [player.id, player]));
+    const squad = collectionMatchPrepPlan.players
+      .filter((player) => player.in_matchday_squad)
+      .map((player) => {
+        const known = knownPlayerById.get(player.player_id);
+        if (known) {
+          return known;
+        }
+        return {
+          id: player.player_id,
+          team_id: selectedTeamId,
+          display_name: player.player_name,
+          shirt_number: player.shirt_number,
+          position: player.position,
+        } satisfies Player;
+      });
+    return squad.sort((a, b) => {
+      const numberA = a.shirt_number ?? Number.MAX_SAFE_INTEGER;
+      const numberB = b.shirt_number ?? Number.MAX_SAFE_INTEGER;
+      if (numberA !== numberB) {
+        return numberA - numberB;
+      }
+      return a.display_name.localeCompare(b.display_name);
+    });
+  }, [collectionMatchPrepPlan, playersForSelectedTeam, selectedTeamId]);
 
   const dashboardStats = useMemo(
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
@@ -913,6 +1009,15 @@ function App() {
     );
   }, []);
 
+  const loadCollectionEvents = useCallback(async (sessionId: string, teamId: string) => {
+    if (!sessionId || !teamId) {
+      setCollectionEvents([]);
+      return;
+    }
+    const rows = await listCollectionEvents(sessionId, teamId);
+    setCollectionEvents(rows);
+  }, []);
+
   const loadAdminData = useCallback(async () => {
     setIsAdminLoading(true);
     try {
@@ -1026,6 +1131,45 @@ function App() {
       window.clearInterval(interval);
     };
   }, [loadActiveCollectionSessions, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!user || !selectedTeamId || !selectedCollectionSessionId) {
+      setCollectionEvents([]);
+      return;
+    }
+    void loadCollectionEvents(selectedCollectionSessionId, selectedTeamId);
+  }, [loadCollectionEvents, selectedCollectionSessionId, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!user || !selectedTeamId || !selectedCollectionSession?.match_id) {
+      setCollectionMatchPrepPlan(null);
+      return;
+    }
+    let cancelled = false;
+    void getMatchPrepPlan(selectedCollectionSession.match_id, selectedTeamId)
+      .then((plan) => {
+        if (!cancelled) {
+          setCollectionMatchPrepPlan(plan);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCollectionMatchPrepPlan(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCollectionSession?.match_id, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!eventComposerPlayerId) {
+      return;
+    }
+    if (!collectionEventPlayers.some((player) => player.id === eventComposerPlayerId)) {
+      setEventComposerPlayerId("");
+    }
+  }, [collectionEventPlayers, eventComposerPlayerId]);
 
   useEffect(() => {
     if (!startableCollectionFixtures.length) {
@@ -1236,6 +1380,58 @@ function App() {
         setError(requestError.message);
       } else {
         setError("Failed to start next period");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCollectionPitchClick = async (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!selectedTeamId || !selectedCollectionSessionId || !collectionSessionLive?.is_period_running) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+    const xFromLeftPct = ((event.clientX - rect.left) / rect.width) * 100;
+    const yFromTopPct = ((event.clientY - rect.top) / rect.height) * 100;
+    const xPct = Math.max(0, Math.min(100, 100 - yFromTopPct));
+    const yPct = Math.max(0, Math.min(100, 100 - xFromLeftPct));
+    setPendingEventPitchPoint({ xPct, yPct });
+    setEventComposerType("shot");
+    setEventComposerGoalPoint(null);
+    setEventComposerPlayerId("");
+    setIsEventComposerOpen(true);
+  };
+
+  const handleSubmitShotEvent = async (outcome: "miss" | "post" | "save" | "goal") => {
+    if (!selectedTeamId || !selectedCollectionSessionId || !pendingEventPitchPoint || !eventComposerPlayerId) {
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const created = await createCollectionEvent(selectedCollectionSessionId, {
+        team_id: selectedTeamId,
+        event_kind: "shot",
+        player_id: eventComposerPlayerId,
+        x_pct: pendingEventPitchPoint.xPct,
+        y_pct: pendingEventPitchPoint.yPct,
+        goal_mouth_y: eventComposerGoalPoint?.y ?? null,
+        goal_mouth_z: eventComposerGoalPoint?.z ?? null,
+        shot_outcome: outcome,
+      });
+      setCollectionEvents((current) => [...current, created]);
+      setIsEventComposerOpen(false);
+      setPendingEventPitchPoint(null);
+      setEventComposerGoalPoint(null);
+      setEventComposerPlayerId("");
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to record shot");
       }
     } finally {
       setIsSubmitting(false);
@@ -2671,7 +2867,16 @@ function App() {
                 {collectionSessionLive ? (
                   <>
                     <div className="collection-pitch-wrap">
-                      <PitchDiagram format={collectionSessionLive.format} />
+                      <PitchDiagram format={collectionSessionLive.format} onClick={handleCollectionPitchClick}>
+                        {currentPeriodShotEvents.map((shot) => (
+                          <span
+                            key={shot.id}
+                            className="collection-shot-marker"
+                            style={{ left: `${100 - shot.y_pct}%`, top: `${100 - shot.x_pct}%` }}
+                            title={`Shot · ${shot.shot_outcome ?? "unmarked"} · ${formatClock(shot.period_second)} (P${shot.period_number})`}
+                          />
+                        ))}
+                      </PitchDiagram>
                       <div className="collection-pitch-overlay">
                         <strong>
                           P{collectionSessionLive.period_number}/{collectionSessionLive.total_periods}
@@ -2710,6 +2915,93 @@ function App() {
                 ) : (
                   <p className="muted">No active session selected.</p>
                 )}
+              </div>
+            ) : null}
+            {isEventComposerOpen ? (
+              <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+                <div className="fixture-composer event-composer">
+                  <h3>Capture Event</h3>
+                  <div className="event-type-toggle">
+                    <button
+                      type="button"
+                      className={`button ${eventComposerType === "shot" ? "primary" : "secondary"}`}
+                      onClick={() => setEventComposerType("shot")}
+                    >
+                      Shot
+                    </button>
+                  </div>
+                  <div className="event-composer-body">
+                    <div className="event-player-panel">
+                      <div className="event-player-grid">
+                        {collectionEventPlayers.map((player) => (
+                          <button
+                            key={player.id}
+                            type="button"
+                            className={`event-player-tile ${eventComposerPlayerId === player.id ? "selected" : ""}`}
+                            onClick={() => setEventComposerPlayerId(player.id)}
+                            title={player.display_name}
+                          >
+                            <strong>{player.shirt_number ? `#${player.shirt_number}` : "?"}</strong>
+                          </button>
+                        ))}
+                      </div>
+                      {collectionEventPlayers.length === 0 ? (
+                        <p className="muted">No matchday squad players available for this fixture.</p>
+                      ) : null}
+                    </div>
+                    {eventComposerType === "shot" ? (
+                      <div className="event-shot-panel">
+                      <GoalMouthDiagram
+                        value={eventComposerGoalPoint}
+                        onChange={setEventComposerGoalPoint}
+                        disabled={isSubmitting}
+                        goalWidthFt={selectedCollectionGoalDimensions?.width_ft}
+                        pitchWidthM={selectedCollectionGoalDimensions?.pitch_width_m}
+                        goalHeightFt={selectedCollectionGoalWindow?.goalHeightFt}
+                        viewPaddingTopFt={6}
+                        viewPaddingBottomFt={1.5}
+                      />
+                      <p className="muted">
+                        {eventComposerGoalPoint
+                          ? `Goal mouth Y ${eventComposerGoalPoint.y.toFixed(1)} (0-100), Z ${eventComposerGoalPoint.z.toFixed(1)}ft (0-20)`
+                          : "Optional: click inside the goal frame to set goal-mouth coordinates"}
+                      </p>
+                      {selectedCollectionGoalDimensions ? (
+                        <p className="muted">
+                          Reference goal size for {collectionSessionLive?.format.replace("_", " ")}:{" "}
+                          {selectedCollectionGoalDimensions.width_ft}ft x {selectedCollectionGoalDimensions.height_ft}ft
+                        </p>
+                      ) : null}
+                      <div className="event-outcome-actions">
+                        {eventOutcomeOptions.map((option) => (
+                          <button
+                            key={option}
+                            className="button primary"
+                            type="button"
+                            disabled={isSubmitting || !eventComposerPlayerId}
+                            onClick={() => handleSubmitShotEvent(option)}
+                          >
+                            {option[0].toUpperCase() + option.slice(1)}
+                          </button>
+                        ))}
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={() => {
+                            setIsEventComposerOpen(false);
+                            setPendingEventPitchPoint(null);
+                            setEventComposerGoalPoint(null);
+                            setEventComposerPlayerId("");
+                          }}
+                          disabled={isSubmitting}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             ) : null}
           </section>

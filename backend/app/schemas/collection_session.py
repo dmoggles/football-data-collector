@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,3 +32,31 @@ class CollectionSessionResponse(BaseModel):
     can_start_next_period: bool
     next_period_available: bool
     off_schedule_warning: str | None = None
+
+
+class CollectionEventCreateRequest(BaseModel):
+    team_id: str = Field(min_length=1, max_length=36)
+    event_kind: Literal["shot"] = "shot"
+    player_id: str | None = Field(default=None, min_length=1, max_length=36)
+    x_pct: float = Field(ge=0, le=100)
+    y_pct: float = Field(ge=0, le=100)
+    goal_mouth_y: float | None = Field(default=None, ge=0, le=100)
+    goal_mouth_z: float | None = Field(default=None, ge=0, le=20)
+    shot_outcome: Literal["miss", "post", "save", "goal"] | None = None
+
+
+class CollectionEventResponse(BaseModel):
+    id: str
+    session_id: str
+    match_id: str
+    team_id: str
+    player_id: str | None
+    event_kind: str
+    period_number: int
+    period_second: int
+    x_pct: float
+    y_pct: float
+    goal_mouth_y: float | None = None
+    goal_mouth_z: float | None = None
+    shot_outcome: str | None = None
+    created_at: datetime

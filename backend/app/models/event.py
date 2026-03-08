@@ -25,7 +25,7 @@ class Event(Base):
             name="ck_events_goal_mouth_y_range",
         ),
         CheckConstraint(
-            "goal_mouth_z IS NULL OR (goal_mouth_z >= 0 AND goal_mouth_z <= 100)",
+            "goal_mouth_z IS NULL OR (goal_mouth_z >= 0 AND goal_mouth_z <= 20)",
             name="ck_events_goal_mouth_z_range",
         ),
     )

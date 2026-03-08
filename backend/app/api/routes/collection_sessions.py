@@ -12,12 +12,16 @@ from app.api.entitlements import ensure_team_admin, ensure_team_member
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.collection_session import CollectionSession
+from app.models.event import Event
 from app.models.match import Match
+from app.models.player import Player
 from app.models.session import Session as UserSession
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.collection_session import (
     CollectionSessionActionRequest,
+    CollectionEventCreateRequest,
+    CollectionEventResponse,
     CollectionSessionResponse,
     CollectionSessionStartRequest,
 )
@@ -149,6 +153,26 @@ def get_websocket_user_id(db: Session, websocket: WebSocket) -> str | None:
     return session_record.user_id
 
 
+def build_collection_event_response(row: Event, session_id: str) -> CollectionEventResponse:
+    metadata = row.metadata_json or {}
+    return CollectionEventResponse(
+        id=row.id,
+        session_id=session_id,
+        match_id=row.match_id,
+        team_id=row.team_id,
+        player_id=row.player_id,
+        event_kind=row.event_kind,
+        period_number=row.period_number,
+        period_second=row.period_second,
+        x_pct=float(row.x_pct or 0),
+        y_pct=float(row.y_pct or 0),
+        goal_mouth_y=float(row.goal_mouth_y) if row.goal_mouth_y is not None else None,
+        goal_mouth_z=float(row.goal_mouth_z) if row.goal_mouth_z is not None else None,
+        shot_outcome=metadata.get("shot_outcome"),
+        created_at=row.created_at,
+    )
+
+
 @router.get("/active", response_model=list[CollectionSessionResponse])
 def list_active_collection_sessions(
     team_id: str = Query(...),
@@ -217,6 +241,66 @@ def start_collection_session(
     db.commit()
     db.refresh(session_row)
     return build_collection_session_response(db, session_row, match, payload.team_id, off_schedule_warning=warning)
+
+
+@router.get("/{session_id}/events", response_model=list[CollectionEventResponse])
+def list_collection_events(
+    session_id: str,
+    team_id: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CollectionEventResponse]:
+    ensure_team_member(db, team_id, user.id)
+    session_row = get_collection_session_or_404(db, session_id)
+    if session_row.team_id != team_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session does not belong to team")
+    rows = db.scalars(
+        select(Event)
+        .where(Event.match_id == session_row.match_id, Event.team_id == team_id, Event.event_kind == "shot")
+        .order_by(Event.created_at.asc())
+    ).all()
+    return [build_collection_event_response(row, session_id) for row in rows]
+
+
+@router.post("/{session_id}/events", response_model=CollectionEventResponse, status_code=status.HTTP_201_CREATED)
+def create_collection_event(
+    session_id: str,
+    payload: CollectionEventCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CollectionEventResponse:
+    ensure_team_member(db, payload.team_id, user.id)
+    session_row = get_collection_session_or_404(db, session_id)
+    if session_row.team_id != payload.team_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session does not belong to team")
+    if session_row.state != "live" or not session_row.period_started_at:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot collect events while period is stopped")
+    if payload.event_kind != "shot":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only shot events are supported in v1")
+    if payload.player_id:
+        player = db.scalar(select(Player).where(Player.id == payload.player_id))
+        if not player or player.team_id != payload.team_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected player is invalid for team")
+
+    period_second = current_period_elapsed_seconds(session_row)
+    event = Event(
+        match_id=session_row.match_id,
+        user_id=user.id,
+        team_id=payload.team_id,
+        player_id=payload.player_id,
+        event_kind=payload.event_kind,
+        period_number=session_row.period_number,
+        period_second=period_second,
+        x_pct=round(payload.x_pct, 2),
+        y_pct=round(payload.y_pct, 2),
+        goal_mouth_y=round(payload.goal_mouth_y, 2) if payload.goal_mouth_y is not None else None,
+        goal_mouth_z=round(payload.goal_mouth_z, 2) if payload.goal_mouth_z is not None else None,
+        metadata_json={"shot_outcome": payload.shot_outcome} if payload.shot_outcome else None,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return build_collection_event_response(event, session_id)
 
 
 @router.get("/{session_id}", response_model=CollectionSessionResponse)
@@ -316,6 +400,9 @@ async def collection_session_ws(websocket: WebSocket, session_id: str, team_id: 
 
         ensure_team_member(db, team_id, user_id)
         while True:
+            # Ensure each loop reads a fresh DB snapshot (MySQL REPEATABLE READ would
+            # otherwise keep returning stale period state in a long-lived session).
+            db.rollback()
             session_row = db.scalar(select(CollectionSession).where(CollectionSession.id == session_id))
             if not session_row:
                 await websocket.close(code=4404, reason="Session not found")
@@ -330,7 +417,6 @@ async def collection_session_ws(websocket: WebSocket, session_id: str, team_id: 
             payload = build_collection_session_response(db, session_row, match, team_id).model_dump(mode="json")
             await websocket.send_json(payload)
             await asyncio.sleep(1.0)
-            db.expire_all()
     except WebSocketDisconnect:
         return
     finally:

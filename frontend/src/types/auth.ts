@@ -216,6 +216,23 @@ export type CollectionSession = {
   off_schedule_warning: string | null;
 };
 
+export type CollectionEvent = {
+  id: string;
+  session_id: string;
+  match_id: string;
+  team_id: string;
+  event_kind: string;
+  player_id: string | null;
+  period_number: number;
+  period_second: number;
+  x_pct: number;
+  y_pct: number;
+  goal_mouth_y: number | null;
+  goal_mouth_z: number | null;
+  shot_outcome: "miss" | "post" | "save" | "goal" | null;
+  created_at: string;
+};
+
 export type CoachingNote = {
   id: string;
   match_id: string;

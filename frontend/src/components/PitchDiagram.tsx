@@ -5,6 +5,7 @@ import type { MatchFormat } from "../types/auth";
 type PitchDiagramProps = {
   format: MatchFormat;
   className?: string;
+  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
   children?: ReactNode;
@@ -99,6 +100,7 @@ function arcPath(
 export function PitchDiagram({
   format,
   className = "",
+  onClick,
   onDragOver,
   onDrop,
   children,
@@ -127,6 +129,7 @@ export function PitchDiagram({
     <div
       className={pitchClassName}
       style={{ aspectRatio: `${width} / ${length}` }}
+      onClick={onClick}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
