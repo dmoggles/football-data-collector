@@ -2022,7 +2022,7 @@ function App() {
             <img src="/assets/branding/logo1.png" alt="TapLine logo" className="content-brand-logo" />
             <div>
             <h1>TapLine</h1>
-            <p className="muted">{isWorkspaceLoading ? "Refreshing data..." : "Ready"}</p>
+            <p className="muted">{isWorkspaceLoading ? "Refreshing data..." : selectedTeamName || "No team selected"}</p>
             </div>
           </div>
           <button className="button secondary" onClick={handleLogout} disabled={isSubmitting}>
