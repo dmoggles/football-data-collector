@@ -15,6 +15,7 @@ export type AdminUserOverview = {
 export type AdminClubOverview = {
   id: string;
   name: string;
+  logo_url: string | null;
 };
 
 export type AdminTeamOwnerOverview = {
@@ -52,6 +53,7 @@ export type Team = {
   id: string;
   club_id: string;
   club_name: string;
+  club_logo_url: string | null;
   team_name: string;
   my_role?: TeamRole;
   display_name: string;
@@ -61,6 +63,7 @@ export type TeamDirectory = {
   id: string;
   club_id: string;
   club_name: string;
+  club_logo_url: string | null;
   team_name: string;
   display_name: string;
 };

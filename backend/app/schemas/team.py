@@ -36,6 +36,7 @@ class TeamResponse(BaseModel):
     id: str
     club_id: str
     club_name: str
+    club_logo_url: str | None = None
     team_name: str
     my_role: str
 
@@ -44,4 +45,5 @@ class TeamDirectoryResponse(BaseModel):
     id: str
     club_id: str
     club_name: str
+    club_logo_url: str | None = None
     team_name: str

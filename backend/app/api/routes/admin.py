@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.auth_deps import require_super_admin
 from app.api.deps import get_db
 from app.api.entitlements import get_team_or_404
+from app.core.club_logos import CLUB_LOGOS_DIR, build_club_logo_url
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.club import Club
 from app.models.global_role import GlobalRole, GlobalRoleType
@@ -121,7 +122,14 @@ def get_admin_overview(
     ]
 
     clubs = db.scalars(select(Club).order_by(Club.name.asc())).all()
-    club_overview = [AdminClubOverview(id=club.id, name=club.name) for club in clubs]
+    club_overview = [
+        AdminClubOverview(
+            id=club.id,
+            name=club.name,
+            logo_url=build_club_logo_url(club.logo_filename),
+        )
+        for club in clubs
+    ]
 
     teams_rows = db.execute(
         select(Team.id, Team.club_id, Team.name, Club.name)
@@ -164,7 +172,7 @@ def create_club(
     payload: ClubCreateRequest,
     db: Session = Depends(get_db),
     super_admin: User = Depends(require_super_admin),
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     club = Club(name=payload.name.strip())
     db.add(club)
 
@@ -186,7 +194,7 @@ def create_club(
         metadata_json={"club_name": club.name},
     )
     db.commit()
-    return {"id": club.id, "name": club.name}
+    return {"id": club.id, "name": club.name, "logo_url": build_club_logo_url(club.logo_filename)}
 
 
 @router.get("/audit-logs", response_model=list[AdminAuditLogEntry])
@@ -285,7 +293,7 @@ def update_club(
     payload: ClubUpdateRequest,
     db: Session = Depends(get_db),
     super_admin: User = Depends(require_super_admin),
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     club = db.scalar(select(Club).where(Club.id == club_id))
     if not club:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Club not found")
@@ -309,7 +317,7 @@ def update_club(
         metadata_json={"club_name": club.name},
     )
     db.commit()
-    return {"id": club.id, "name": club.name}
+    return {"id": club.id, "name": club.name, "logo_url": build_club_logo_url(club.logo_filename)}
 
 
 @router.delete("/clubs/{club_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -329,6 +337,7 @@ def delete_club(
             detail="Club has teams and cannot be deleted",
         )
 
+    logo_filename = club.logo_filename
     write_audit_log(
         db=db,
         actor_user_id=super_admin.id,
@@ -339,6 +348,10 @@ def delete_club(
     )
     db.delete(club)
     db.commit()
+    if logo_filename:
+        logo_path = CLUB_LOGOS_DIR / logo_filename
+        if logo_path.exists():
+            logo_path.unlink()
 
 
 @router.post("/teams/{team_id}/assign-team-admin", response_model=TeamMemberResponse)

@@ -383,6 +383,27 @@ select {
   font-size: clamp(1.35rem, 2vw, 1.9rem);
 }
 
+.content-brand-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.content-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.content-club-logo-large {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 0.45rem;
+  object-fit: cover;
+  border: 1px solid var(--tl-border-soft);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
 .section-card {
   border: 1px solid var(--tl-border);
   background: var(--tl-surface-1);
@@ -441,6 +462,63 @@ select {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.club-logo-panel {
+  border: 1px solid var(--tl-border-soft);
+  border-radius: 0.7rem;
+  padding: 0.6rem;
+  background: rgba(26, 39, 52, 0.74);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.club-logo-preview {
+  width: 88px;
+  height: 88px;
+  border-radius: 0.55rem;
+  object-fit: cover;
+  border: 1px solid var(--tl-border-soft);
+}
+
+.club-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.club-list-meta span {
+  overflow-wrap: anywhere;
+}
+
+.club-logo-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.45rem;
+  border: 1px solid var(--tl-border-soft);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.club-logo-thumb.placeholder {
+  display: grid;
+  place-items: center;
+  font-size: 0.62rem;
+  color: var(--tl-muted);
+  background: rgba(26, 39, 52, 0.82);
+}
+
+.file-upload-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.file-upload-button input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .admin-subnav {

@@ -34,8 +34,10 @@ import {
   login,
   logout,
   removeAdminTeamOwner,
+  resolveApiAssetUrl,
   register,
   revokeUserGlobalRole,
+  uploadClubLogo,
   updateFixture,
   upsertMatchPrepPlan,
   updatePlayer,
@@ -431,6 +433,7 @@ function App() {
   const [adminEditingTeamId, setAdminEditingTeamId] = useState("");
   const [adminEditingTeamName, setAdminEditingTeamName] = useState("");
   const [adminEditingTeamClubId, setAdminEditingTeamClubId] = useState("");
+  const [clubLogoUploadClubId, setClubLogoUploadClubId] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [membersLoadError, setMembersLoadError] = useState<string | null>(null);
@@ -447,9 +450,14 @@ function App() {
     [isSuperAdmin],
   );
 
-  const selectedTeamName = useMemo(
-    () => teams.find((team) => team.id === selectedTeamId)?.display_name ?? "",
+  const selectedTeam = useMemo(
+    () => teams.find((team) => team.id === selectedTeamId) ?? null,
     [selectedTeamId, teams],
+  );
+  const selectedTeamName = selectedTeam?.display_name ?? "";
+  const selectedTeamClubLogoUrl = useMemo(
+    () => resolveApiAssetUrl(selectedTeam?.club_logo_url),
+    [selectedTeam],
   );
   const matchPrepSlots = useMemo(
     () => (matchPrepPlan ? getFormationSlots(matchPrepPlan.format, matchPrepPlan.formation) : []),
@@ -1263,6 +1271,7 @@ function App() {
             id: created.id,
             club_id: created.club_id,
             club_name: created.club_name,
+            club_logo_url: created.club_logo_url,
             team_name: created.team_name,
             display_name: created.display_name,
           },
@@ -1829,6 +1838,32 @@ function App() {
     }
   };
 
+  const handleUploadClubLogo = async (clubId: string, file: File | null) => {
+    if (!clubId || !file) {
+      return;
+    }
+    setError(null);
+    setClubLogoUploadClubId(clubId);
+    setIsSubmitting(true);
+    try {
+      await uploadClubLogo(clubId, file);
+      if (isSuperAdmin) {
+        await Promise.all([loadWorkspaceData(selectedTeamId), loadAdminData()]);
+      } else {
+        await loadWorkspaceData(selectedTeamId);
+      }
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to upload club logo");
+      }
+    } finally {
+      setIsSubmitting(false);
+      setClubLogoUploadClubId("");
+    }
+  };
+
   const startAdminTeamEdit = (teamId: string, clubId: string, currentTeamName: string) => {
     setAdminEditingTeamId(teamId);
     setAdminEditingTeamClubId(clubId);
@@ -2022,12 +2057,23 @@ function App() {
             <img src="/assets/branding/logo1.png" alt="TapLine logo" className="content-brand-logo" />
             <div>
             <h1>TapLine</h1>
-            <p className="muted">{isWorkspaceLoading ? "Refreshing data..." : selectedTeamName || "No team selected"}</p>
+            <div className="content-brand-subtitle">
+              <p className="muted">{isWorkspaceLoading ? "Refreshing data..." : selectedTeamName || "No team selected"}</p>
+            </div>
             </div>
           </div>
-          <button className="button secondary" onClick={handleLogout} disabled={isSubmitting}>
-            Log Out
-          </button>
+          <div className="content-header-actions">
+            {selectedTeamClubLogoUrl ? (
+              <img
+                src={selectedTeamClubLogoUrl}
+                alt={`${selectedTeam?.club_name ?? "Club"} logo`}
+                className="content-club-logo-large"
+              />
+            ) : null}
+            <button className="button secondary" onClick={handleLogout} disabled={isSubmitting}>
+              Log Out
+            </button>
+          </div>
         </header>
 
         {error ? <p className="error-banner">{error}</p> : null}
@@ -2364,6 +2410,33 @@ function App() {
           <section className="section-card two-col">
             <form className="stack-form" onSubmit={handleCreateTeam}>
               <h3>Create Team</h3>
+              {selectedTeam && isSuperAdmin ? (
+                <div className="club-logo-panel">
+                  <p className="muted">Club Logo - {selectedTeam.club_name}</p>
+                  {selectedTeamClubLogoUrl ? (
+                    <img
+                      src={selectedTeamClubLogoUrl}
+                      alt={`${selectedTeam.club_name} logo`}
+                      className="club-logo-preview"
+                    />
+                  ) : (
+                    <p className="muted">No logo uploaded yet.</p>
+                  )}
+                  <label className="button secondary file-upload-button" aria-disabled={isSubmitting || !isSuperAdmin}>
+                    Upload Club Logo
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={isSubmitting || !isSuperAdmin}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        void handleUploadClubLogo(selectedTeam.club_id, file);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
               <SearchableSelect
                 value={clubName}
                 onChange={setClubName}
@@ -3008,15 +3081,43 @@ function App() {
                   {adminOverview.clubs.length === 0 ? <p className="muted">No clubs.</p> : null}
                   {adminOverview.clubs.map((club) => (
                     <div className="list-row" key={club.id}>
-                      {adminEditingClubId === club.id ? (
-                        <input
-                          value={adminEditingClubName}
-                          onChange={(event) => setAdminEditingClubName(event.target.value)}
-                        />
-                      ) : (
-                        <span>{club.name}</span>
-                      )}
+                      <div className="club-list-meta">
+                        {resolveApiAssetUrl(club.logo_url) ? (
+                          <img
+                            src={resolveApiAssetUrl(club.logo_url) ?? ""}
+                            alt={`${club.name} logo`}
+                            className="club-logo-thumb"
+                          />
+                        ) : (
+                          <div className="club-logo-thumb placeholder">No logo</div>
+                        )}
+                        {adminEditingClubId === club.id ? (
+                          <input
+                            value={adminEditingClubName}
+                            onChange={(event) => setAdminEditingClubName(event.target.value)}
+                          />
+                        ) : (
+                          <span>{club.name}</span>
+                        )}
+                      </div>
                       <div className="member-actions">
+                        <label
+                          className="button secondary file-upload-button"
+                          aria-disabled={isSubmitting}
+                          title="Upload club logo"
+                        >
+                          {clubLogoUploadClubId === club.id ? "Uploading..." : "Logo"}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            disabled={isSubmitting}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null;
+                              void handleUploadClubLogo(club.id, file);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
                         {adminEditingClubId === club.id ? (
                           <>
                             <button

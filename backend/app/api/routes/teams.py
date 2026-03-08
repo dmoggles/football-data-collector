@@ -12,14 +12,15 @@ from app.api.entitlements import (
     require_team_admin,
     set_membership_role,
 )
+from app.core.club_logos import build_club_logo_url
 from app.models.club import Club
 from app.models.player import Player
 from app.models.team import Team
 from app.models.team_membership import TeamMembership, TeamRole
 from app.models.user import User
 from app.schemas.team import (
-    TeamDirectoryResponse,
     TeamCreateRequest,
+    TeamDirectoryResponse,
     TeamMemberCreateRequest,
     TeamMemberResponse,
     TeamMemberUpdateRequest,
@@ -47,21 +48,30 @@ def build_team_member_response(db: Session, membership: TeamMembership) -> TeamM
     )
 
 
-def build_team_response(team: Team, club_name: str, my_role: str) -> TeamResponse:
+def build_team_response(
+    team: Team,
+    club_name: str,
+    club_logo_filename: str | None,
+    my_role: str,
+) -> TeamResponse:
     return TeamResponse(
         id=team.id,
         club_id=team.club_id,
         club_name=club_name,
+        club_logo_url=build_club_logo_url(club_logo_filename),
         team_name=team.name,
         my_role=my_role,
     )
 
 
-def build_team_directory_response(team: Team, club_name: str) -> TeamDirectoryResponse:
+def build_team_directory_response(
+    team: Team, club_name: str, club_logo_filename: str | None
+) -> TeamDirectoryResponse:
     return TeamDirectoryResponse(
         id=team.id,
         club_id=team.club_id,
         club_name=club_name,
+        club_logo_url=build_club_logo_url(club_logo_filename),
         team_name=team.name,
     )
 
@@ -83,14 +93,17 @@ def list_teams(
     user: User = Depends(get_current_user),
 ) -> list[TeamResponse]:
     query = (
-        select(Team, Club.name, TeamMembership.role)
+        select(Team, Club.name, Club.logo_filename, TeamMembership.role)
         .join(Club, Club.id == Team.club_id)
         .join(TeamMembership, TeamMembership.team_id == Team.id)
         .where(TeamMembership.user_id == user.id)
         .order_by(Club.name.asc(), Team.name.asc())
     )
     rows = db.execute(query).all()
-    return [build_team_response(team, club_name, role) for team, club_name, role in rows]
+    return [
+        build_team_response(team, club_name, logo_filename, role)
+        for team, club_name, logo_filename, role in rows
+    ]
 
 
 @router.get("/directory", response_model=list[TeamDirectoryResponse])
@@ -99,12 +112,15 @@ def list_team_directory(
     _: User = Depends(get_current_user),
 ) -> list[TeamDirectoryResponse]:
     query = (
-        select(Team, Club.name)
+        select(Team, Club.name, Club.logo_filename)
         .join(Club, Club.id == Team.club_id)
         .order_by(Club.name.asc(), Team.name.asc())
     )
     rows = db.execute(query).all()
-    return [build_team_directory_response(team, club_name) for team, club_name in rows]
+    return [
+        build_team_directory_response(team, club_name, logo_filename)
+        for team, club_name, logo_filename in rows
+    ]
 
 
 @router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
@@ -131,7 +147,7 @@ def create_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name, membership.role)
+    return build_team_response(team, club.name, club.logo_filename, membership.role)
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
@@ -158,7 +174,7 @@ def update_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name, acting_membership.role)
+    return build_team_response(team, club.name, club.logo_filename, acting_membership.role)
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

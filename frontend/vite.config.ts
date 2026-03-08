@@ -15,6 +15,8 @@ export default defineConfig({
       "/matches": "http://127.0.0.1:8000",
       "/match-prep": "http://127.0.0.1:8000",
       "/admin": "http://127.0.0.1:8000",
+      "/clubs": "http://127.0.0.1:8000",
+      "/club-logos": "http://127.0.0.1:8000",
     },
   },
 });

@@ -44,6 +44,16 @@ function buildUrl(path: string): string {
   return `${base}${cleanPath}`;
 }
 
+export function resolveApiAssetUrl(path: string | null | undefined): string | null {
+  if (!path) {
+    return null;
+  }
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  return buildUrl(path);
+}
+
 async function request<TResponse>(
   path: string,
   method: HttpMethod,
@@ -225,16 +235,48 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   return request<AdminOverview>("/admin/overview", "GET");
 }
 
-export async function createAdminClub(name: string): Promise<{ id: string; name: string }> {
-  return request<{ id: string; name: string }>("/admin/clubs", "POST", { name });
+export async function createAdminClub(name: string): Promise<{ id: string; name: string; logo_url: string | null }> {
+  return request<{ id: string; name: string; logo_url: string | null }>("/admin/clubs", "POST", { name });
 }
 
-export async function updateAdminClub(clubId: string, name: string): Promise<{ id: string; name: string }> {
-  return request<{ id: string; name: string }>(`/admin/clubs/${clubId}`, "PATCH", { name });
+export async function updateAdminClub(
+  clubId: string,
+  name: string,
+): Promise<{ id: string; name: string; logo_url: string | null }> {
+  return request<{ id: string; name: string; logo_url: string | null }>(`/admin/clubs/${clubId}`, "PATCH", { name });
 }
 
 export async function deleteAdminClub(clubId: string): Promise<void> {
   await request<void>(`/admin/clubs/${clubId}`, "DELETE");
+}
+
+export async function uploadClubLogo(
+  clubId: string,
+  file: File,
+): Promise<{ id: string; name: string; logo_url: string | null }> {
+  const formData = new FormData();
+  formData.append("logo", file);
+
+  const response = await fetch(buildUrl(`/clubs/${clubId}/logo`), {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) {
+        message = payload.detail;
+      }
+    } catch {
+      // Keep default fallback if response body is not JSON.
+    }
+    throw new ApiError(message, response.status);
+  }
+
+  return (await response.json()) as { id: string; name: string; logo_url: string | null };
 }
 
 export async function assignAdminTeamOwner(

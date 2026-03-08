@@ -36,6 +36,7 @@ class AdminUserOverview(BaseModel):
 class AdminClubOverview(BaseModel):
     id: str
     name: str
+    logo_url: str | None = None
 
 
 class AdminTeamOwnerOverview(BaseModel):
