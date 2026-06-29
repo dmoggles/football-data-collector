@@ -166,9 +166,13 @@ def build_collection_event_response(row: Event, session_id: str) -> CollectionEv
         period_second=row.period_second,
         x_pct=float(row.x_pct or 0),
         y_pct=float(row.y_pct or 0),
+        end_x_pct=float(row.end_x_pct) if row.end_x_pct is not None else None,
+        end_y_pct=float(row.end_y_pct) if row.end_y_pct is not None else None,
         goal_mouth_y=float(row.goal_mouth_y) if row.goal_mouth_y is not None else None,
         goal_mouth_z=float(row.goal_mouth_z) if row.goal_mouth_z is not None else None,
         shot_outcome=metadata.get("shot_outcome"),
+        receiving_player_id=metadata.get("receiving_player_id"),
+        pass_completed=metadata.get("pass_completed"),
         created_at=row.created_at,
     )
 
@@ -256,7 +260,11 @@ def list_collection_events(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session does not belong to team")
     rows = db.scalars(
         select(Event)
-        .where(Event.match_id == session_row.match_id, Event.team_id == team_id, Event.event_kind == "shot")
+        .where(
+            Event.match_id == session_row.match_id,
+            Event.team_id == team_id,
+            Event.event_kind.in_(["shot", "tackle", "interception", "pass"]),
+        )
         .order_by(Event.created_at.asc())
     ).all()
     return [build_collection_event_response(row, session_id) for row in rows]
@@ -275,14 +283,28 @@ def create_collection_event(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session does not belong to team")
     if session_row.state != "live" or not session_row.period_started_at:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot collect events while period is stopped")
-    if payload.event_kind != "shot":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only shot events are supported in v1")
     if payload.player_id:
         player = db.scalar(select(Player).where(Player.id == payload.player_id))
         if not player or player.team_id != payload.team_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected player is invalid for team")
+    if payload.receiving_player_id:
+        receiving_player = db.scalar(select(Player).where(Player.id == payload.receiving_player_id))
+        if not receiving_player or receiving_player.team_id != payload.team_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Receiving player is invalid for team")
+    if payload.event_kind == "pass" and (payload.end_x_pct is None or payload.end_y_pct is None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pass events require end coordinates")
 
+    is_shot = payload.event_kind == "shot"
+    is_pass = payload.event_kind == "pass"
     period_second = current_period_elapsed_seconds(session_row)
+    metadata_json: dict | None = None
+    if is_shot and payload.shot_outcome:
+        metadata_json = {"shot_outcome": payload.shot_outcome}
+    if is_pass:
+        metadata_json = {
+            "pass_completed": bool(payload.pass_completed),
+            "receiving_player_id": payload.receiving_player_id,
+        }
     event = Event(
         match_id=session_row.match_id,
         user_id=user.id,
@@ -293,9 +315,11 @@ def create_collection_event(
         period_second=period_second,
         x_pct=round(payload.x_pct, 2),
         y_pct=round(payload.y_pct, 2),
-        goal_mouth_y=round(payload.goal_mouth_y, 2) if payload.goal_mouth_y is not None else None,
-        goal_mouth_z=round(payload.goal_mouth_z, 2) if payload.goal_mouth_z is not None else None,
-        metadata_json={"shot_outcome": payload.shot_outcome} if payload.shot_outcome else None,
+        end_x_pct=round(payload.end_x_pct, 2) if is_pass and payload.end_x_pct is not None else None,
+        end_y_pct=round(payload.end_y_pct, 2) if is_pass and payload.end_y_pct is not None else None,
+        goal_mouth_y=round(payload.goal_mouth_y, 2) if is_shot and payload.goal_mouth_y is not None else None,
+        goal_mouth_z=round(payload.goal_mouth_z, 2) if is_shot and payload.goal_mouth_z is not None else None,
+        metadata_json=metadata_json,
     )
     db.add(event)
     db.commit()
