@@ -535,17 +535,58 @@ textarea {
   color: var(--tl-muted);
 }
 
-.collection-shot-marker {
+.collection-event-marker {
   position: absolute;
   transform: translate(-50%, -50%);
   width: 0.8rem;
   height: 0.8rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.9);
-  background: rgba(244, 80, 80, 0.9);
-  box-shadow: 0 0 0 2px rgba(244, 80, 80, 0.22);
   pointer-events: none;
   z-index: 3;
+}
+
+.collection-event-marker.shot {
+  background: rgba(244, 80, 80, 0.9);
+  box-shadow: 0 0 0 2px rgba(244, 80, 80, 0.22);
+}
+
+.collection-event-marker.tackle {
+  background: rgba(80, 172, 244, 0.92);
+  box-shadow: 0 0 0 2px rgba(80, 172, 244, 0.2);
+  border-radius: 0.15rem;
+}
+
+.collection-event-marker.interception {
+  background: rgba(255, 204, 92, 0.92);
+  box-shadow: 0 0 0 2px rgba(255, 204, 92, 0.2);
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.collection-event-marker.pass {
+  background: rgba(143, 235, 120, 0.95);
+  box-shadow: 0 0 0 2px rgba(143, 235, 120, 0.22);
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.collection-pass-path,
+.collection-pass-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  border-top: 2px solid rgba(143, 235, 120, 0.75);
+  transform-origin: 0 0;
+  transform: rotate(0deg);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.collection-pass-preview {
+  border-top-color: rgba(143, 235, 120, 0.45);
+  border-top-style: dashed;
 }
 
 .event-composer {
