@@ -571,6 +571,13 @@ textarea {
   height: 0.72rem;
 }
 
+.collection-event-marker.shot_against {
+  background: rgba(255, 140, 0, 0.92);
+  box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25);
+  border-radius: 0.15rem;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
 .collection-pass-path,
 .collection-pass-preview {
   position: absolute;

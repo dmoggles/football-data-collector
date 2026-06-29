@@ -263,7 +263,7 @@ def list_collection_events(
         .where(
             Event.match_id == session_row.match_id,
             Event.team_id == team_id,
-            Event.event_kind.in_(["shot", "tackle", "interception", "pass"]),
+            Event.event_kind.in_(["shot", "tackle", "interception", "shot_against"]),
         )
         .order_by(Event.created_at.asc())
     ).all()
@@ -287,24 +287,9 @@ def create_collection_event(
         player = db.scalar(select(Player).where(Player.id == payload.player_id))
         if not player or player.team_id != payload.team_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected player is invalid for team")
-    if payload.receiving_player_id:
-        receiving_player = db.scalar(select(Player).where(Player.id == payload.receiving_player_id))
-        if not receiving_player or receiving_player.team_id != payload.team_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Receiving player is invalid for team")
-    if payload.event_kind == "pass" and (payload.end_x_pct is None or payload.end_y_pct is None):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pass events require end coordinates")
-
-    is_shot = payload.event_kind == "shot"
-    is_pass = payload.event_kind == "pass"
+    is_shot = payload.event_kind in ("shot", "shot_against")
     period_second = current_period_elapsed_seconds(session_row)
-    metadata_json: dict | None = None
-    if is_shot and payload.shot_outcome:
-        metadata_json = {"shot_outcome": payload.shot_outcome}
-    if is_pass:
-        metadata_json = {
-            "pass_completed": bool(payload.pass_completed),
-            "receiving_player_id": payload.receiving_player_id,
-        }
+    metadata_json: dict | None = {"shot_outcome": payload.shot_outcome} if is_shot and payload.shot_outcome else None
     event = Event(
         match_id=session_row.match_id,
         user_id=user.id,
@@ -315,8 +300,6 @@ def create_collection_event(
         period_second=period_second,
         x_pct=round(payload.x_pct, 2),
         y_pct=round(payload.y_pct, 2),
-        end_x_pct=round(payload.end_x_pct, 2) if is_pass and payload.end_x_pct is not None else None,
-        end_y_pct=round(payload.end_y_pct, 2) if is_pass and payload.end_y_pct is not None else None,
         goal_mouth_y=round(payload.goal_mouth_y, 2) if is_shot and payload.goal_mouth_y is not None else None,
         goal_mouth_z=round(payload.goal_mouth_z, 2) if is_shot and payload.goal_mouth_z is not None else None,
         metadata_json=metadata_json,

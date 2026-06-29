@@ -36,17 +36,13 @@ class CollectionSessionResponse(BaseModel):
 
 class CollectionEventCreateRequest(BaseModel):
     team_id: str = Field(min_length=1, max_length=36)
-    event_kind: Literal["shot", "tackle", "interception", "pass"] = "shot"
+    event_kind: Literal["shot", "tackle", "interception", "shot_against"] = "shot"
     player_id: str | None = Field(default=None, min_length=1, max_length=36)
     x_pct: float = Field(ge=0, le=100)
     y_pct: float = Field(ge=0, le=100)
-    end_x_pct: float | None = Field(default=None, ge=0, le=100)
-    end_y_pct: float | None = Field(default=None, ge=0, le=100)
     goal_mouth_y: float | None = Field(default=None, ge=0, le=100)
     goal_mouth_z: float | None = Field(default=None, ge=0, le=20)
     shot_outcome: Literal["miss", "post", "save", "goal"] | None = None
-    receiving_player_id: str | None = Field(default=None, min_length=1, max_length=36)
-    pass_completed: bool | None = None
 
 
 class CollectionEventResponse(BaseModel):

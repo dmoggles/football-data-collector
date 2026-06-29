@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { DragEvent, FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import "./index.css";
 import { GoalMouthDiagram } from "./components/GoalMouthDiagram";
@@ -428,19 +428,9 @@ function App() {
   const [collectionMatchPrepPlan, setCollectionMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [isEventComposerOpen, setIsEventComposerOpen] = useState(false);
   const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
-  const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "pass">("shot");
+  const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "shot_against">("shot");
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
-  const [eventComposerReceivingPlayerId, setEventComposerReceivingPlayerId] = useState("");
-  const [eventComposerPassCompleted, setEventComposerPassCompleted] = useState(true);
-  const [eventComposerPassOutOfBounds, setEventComposerPassOutOfBounds] = useState(false);
   const [eventComposerGoalPoint, setEventComposerGoalPoint] = useState<{ y: number; z: number } | null>(null);
-  const [pendingPassEndPoint, setPendingPassEndPoint] = useState<{ xPct: number; yPct: number } | null>(null);
-  const [collectionPassDrag, setCollectionPassDrag] = useState<{
-    pointerId: number;
-    start: { xPct: number; yPct: number };
-    current: { xPct: number; yPct: number };
-    endOutsideBounds: boolean;
-  } | null>(null);
   const [collectionSessionSocketState, setCollectionSessionSocketState] = useState<"idle" | "connecting" | "live">(
     "idle",
   );
@@ -513,7 +503,6 @@ function App() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const adminAssignEmailInputRef = useRef<HTMLInputElement | null>(null);
   const collectionSessionWsRef = useRef<WebSocket | null>(null);
-  const suppressCollectionPitchClickRef = useRef(false);
 
   const navItems = useMemo(
     () => (isSuperAdmin ? [...BASE_NAV_ITEMS, ADMIN_NAV_ITEM] : BASE_NAV_ITEMS),
@@ -658,7 +647,7 @@ function App() {
     () =>
       collectionEvents.filter(
         (row) =>
-          ["shot", "tackle", "interception", "pass"].includes(row.event_kind) &&
+          ["shot", "tackle", "interception", "shot_against"].includes(row.event_kind) &&
           row.period_number === (collectionSessionLive?.period_number ?? 1),
       ),
     [collectionEvents, collectionSessionLive?.period_number],
@@ -1440,7 +1429,7 @@ function App() {
   };
 
   const predictLikelyCollectionPlayer = (
-    eventKind: "shot" | "tackle" | "interception" | "pass",
+    eventKind: "shot" | "tackle" | "interception",
     xPct: number,
     yPct: number,
   ): string => {
@@ -1453,31 +1442,12 @@ function App() {
     return predictedPlayerId ?? "";
   };
 
-  const buildCollectionPathStyle = (
-    start: { xPct: number; yPct: number },
-    end: { xPct: number; yPct: number },
-  ) => {
-    const x1 = 100 - start.yPct;
-    const y1 = 100 - start.xPct;
-    const x2 = 100 - end.yPct;
-    const y2 = 100 - end.xPct;
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const distance = Math.hypot(dx, dy);
-    const angle = Math.atan2(dy, dx);
-    return {
-      left: `${x1}%`,
-      top: `${y1}%`,
-      width: `${distance}%`,
-      transform: `rotate(${angle}rad)`,
-    };
+  const predictGoalkeeperPlayerId = (): string => {
+    const gk = collectionLineupCandidates.find((c) => c.slot.role === "GK");
+    return gk?.playerId ?? collectionLineupCandidates[0]?.playerId ?? "";
   };
 
   const handleCollectionPitchClick = async (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (suppressCollectionPitchClickRef.current) {
-      suppressCollectionPitchClickRef.current = false;
-      return;
-    }
     if (!selectedTeamId || !selectedCollectionSessionId || !collectionSessionLive?.is_period_running) {
       return;
     }
@@ -1487,95 +1457,15 @@ function App() {
     }
     const { xPct, yPct } = point;
     setPendingEventPitchPoint({ xPct, yPct });
-    const nextEventType: "shot" | "tackle" | "interception" = "shot";
+    const nextEventType = xPct <= 50 ? "shot_against" : "shot";
     setEventComposerType(nextEventType);
     setEventComposerGoalPoint(null);
-    setPendingPassEndPoint(null);
-    setEventComposerPassOutOfBounds(false);
-    setEventComposerReceivingPlayerId("");
-    setEventComposerPassCompleted(true);
-    setEventComposerPlayerId(predictLikelyCollectionPlayer(nextEventType, xPct, yPct));
-    setIsEventComposerOpen(true);
-  };
-
-  const handleCollectionPitchPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectedTeamId || !selectedCollectionSessionId || !collectionSessionLive?.is_period_running) {
-      return;
-    }
-    const point = getCollectionPitchPoint(event);
-    if (!point) {
-      return;
-    }
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setCollectionPassDrag({
-      pointerId: event.pointerId,
-      start: { xPct: point.xPct, yPct: point.yPct },
-      current: { xPct: point.xPct, yPct: point.yPct },
-      endOutsideBounds: point.isOutside,
-    });
-  };
-
-  const handleCollectionPitchPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!collectionPassDrag || collectionPassDrag.pointerId !== event.pointerId) {
-      return;
-    }
-    const point = getCollectionPitchPoint(event);
-    if (!point) {
-      return;
-    }
-    setCollectionPassDrag((current) =>
-      current && current.pointerId === event.pointerId
-        ? {
-            ...current,
-            current: { xPct: point.xPct, yPct: point.yPct },
-            endOutsideBounds: point.isOutside,
-          }
-        : current,
+    setEventComposerPlayerId(
+      nextEventType === "shot_against"
+        ? predictGoalkeeperPlayerId()
+        : predictLikelyCollectionPlayer("shot", xPct, yPct),
     );
-  };
-
-  const handleCollectionPitchPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!collectionPassDrag || collectionPassDrag.pointerId !== event.pointerId) {
-      return;
-    }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const point = getCollectionPitchPoint(event);
-    const endPoint = point
-      ? { xPct: point.xPct, yPct: point.yPct }
-      : collectionPassDrag.current;
-    const dx = endPoint.xPct - collectionPassDrag.start.xPct;
-    const dy = endPoint.yPct - collectionPassDrag.start.yPct;
-    const dragDistance = Math.hypot(dx, dy);
-    const passByDragThreshold = 2.5;
-
-    if (dragDistance >= passByDragThreshold) {
-      suppressCollectionPitchClickRef.current = true;
-      setPendingEventPitchPoint(collectionPassDrag.start);
-      setPendingPassEndPoint(endPoint);
-      setEventComposerType("pass");
-      setEventComposerGoalPoint(null);
-      const passerId = predictLikelyCollectionPlayer("pass", collectionPassDrag.start.xPct, collectionPassDrag.start.yPct);
-      setEventComposerPlayerId(passerId);
-      const receiverId = predictLikelyCollectionPlayer("pass", endPoint.xPct, endPoint.yPct);
-      setEventComposerReceivingPlayerId(receiverId && receiverId !== passerId ? receiverId : "");
-      const endOutside = point?.isOutside ?? collectionPassDrag.endOutsideBounds;
-      setEventComposerPassOutOfBounds(endOutside);
-      setEventComposerPassCompleted(!endOutside);
-      setIsEventComposerOpen(true);
-    }
-    setCollectionPassDrag(null);
-  };
-
-  const handleCollectionPitchPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!collectionPassDrag || collectionPassDrag.pointerId !== event.pointerId) {
-      return;
-    }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    setCollectionPassDrag(null);
+    setIsEventComposerOpen(true);
   };
 
   const handleSubmitNonShotEvent = async () => {
@@ -1594,20 +1484,12 @@ function App() {
         player_id: eventComposerPlayerId,
         x_pct: pendingEventPitchPoint.xPct,
         y_pct: pendingEventPitchPoint.yPct,
-        end_x_pct: eventComposerType === "pass" ? pendingPassEndPoint?.xPct ?? null : null,
-        end_y_pct: eventComposerType === "pass" ? pendingPassEndPoint?.yPct ?? null : null,
-        receiving_player_id: eventComposerType === "pass" ? eventComposerReceivingPlayerId || null : null,
-        pass_completed: eventComposerType === "pass" ? eventComposerPassCompleted : null,
       });
       setCollectionEvents((current) => [...current, created]);
       setIsEventComposerOpen(false);
       setPendingEventPitchPoint(null);
       setEventComposerGoalPoint(null);
-      setPendingPassEndPoint(null);
-      setEventComposerPassOutOfBounds(false);
       setEventComposerPlayerId("");
-      setEventComposerReceivingPlayerId("");
-      setEventComposerPassCompleted(true);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -1640,11 +1522,7 @@ function App() {
       setIsEventComposerOpen(false);
       setPendingEventPitchPoint(null);
       setEventComposerGoalPoint(null);
-      setPendingPassEndPoint(null);
-      setEventComposerPassOutOfBounds(false);
       setEventComposerPlayerId("");
-      setEventComposerReceivingPlayerId("");
-      setEventComposerPassCompleted(true);
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -3088,42 +2966,19 @@ function App() {
                       <PitchDiagram
                         format={collectionSessionLive.format}
                         onClick={handleCollectionPitchClick}
-                        onPointerDown={handleCollectionPitchPointerDown}
-                        onPointerMove={handleCollectionPitchPointerMove}
-                        onPointerUp={handleCollectionPitchPointerUp}
-                        onPointerCancel={handleCollectionPitchPointerCancel}
                       >
-                        {collectionPassDrag ? (
-                          <span
-                            className="collection-pass-preview"
-                            style={buildCollectionPathStyle(collectionPassDrag.start, collectionPassDrag.current)}
-                          />
-                        ) : null}
                         {currentPeriodEvents.map((eventRow) => (
                           <div key={eventRow.id}>
-                            {eventRow.event_kind === "pass" && eventRow.end_x_pct !== null && eventRow.end_y_pct !== null ? (
-                              <span
-                                className="collection-pass-path"
-                                style={buildCollectionPathStyle(
-                                  { xPct: eventRow.x_pct, yPct: eventRow.y_pct },
-                                  { xPct: eventRow.end_x_pct, yPct: eventRow.end_y_pct },
-                                )}
-                              />
-                            ) : null}
                             <span
                               className={`collection-event-marker ${eventRow.event_kind}`}
                               style={{
-                                left: `${100 - (eventRow.event_kind === "pass" && eventRow.end_y_pct !== null ? eventRow.end_y_pct : eventRow.y_pct)}%`,
-                                top: `${100 - (eventRow.event_kind === "pass" && eventRow.end_x_pct !== null ? eventRow.end_x_pct : eventRow.x_pct)}%`,
+                                left: `${100 - eventRow.y_pct}%`,
+                                top: `${100 - eventRow.x_pct}%`,
                               }}
-                              title={`${eventRow.event_kind[0].toUpperCase()}${eventRow.event_kind.slice(1)} · ${
-                                eventRow.event_kind === "shot"
+                              title={`${eventRow.event_kind === "shot_against" ? "Shot Against" : eventRow.event_kind[0].toUpperCase() + eventRow.event_kind.slice(1)} · ${
+                                eventRow.event_kind === "shot" || eventRow.event_kind === "shot_against"
                                   ? eventRow.shot_outcome ?? "unmarked"
-                                  : eventRow.event_kind === "pass"
-                                    ? eventRow.pass_completed
-                                      ? "completed"
-                                      : "incomplete"
-                                    : "recorded"
+                                  : "recorded"
                               } · ${formatClock(eventRow.period_second)} (P${eventRow.period_number})`}
                             />
                           </div>
@@ -3195,6 +3050,17 @@ function App() {
                     </button>
                     <button
                       type="button"
+                      className={`button ${eventComposerType === "shot_against" ? "primary" : "secondary"}`}
+                      onClick={() => {
+                        setEventComposerType("shot_against");
+                        setEventComposerGoalPoint(null);
+                        setEventComposerPlayerId(predictGoalkeeperPlayerId());
+                      }}
+                    >
+                      Shot Against
+                    </button>
+                    <button
+                      type="button"
                       className={`button ${eventComposerType === "tackle" ? "primary" : "secondary"}`}
                       onClick={() => {
                         setEventComposerType("tackle");
@@ -3211,38 +3077,6 @@ function App() {
                       }}
                     >
                       Tackle
-                    </button>
-                    <button
-                      type="button"
-                      className={`button ${eventComposerType === "pass" ? "primary" : "secondary"}`}
-                      onClick={() => {
-                        setEventComposerType("pass");
-                        if (!pendingEventPitchPoint) {
-                          return;
-                        }
-                        setEventComposerGoalPoint(null);
-                        setEventComposerPassOutOfBounds(false);
-                        const passerId = predictLikelyCollectionPlayer(
-                          "pass",
-                          pendingEventPitchPoint.xPct,
-                          pendingEventPitchPoint.yPct,
-                        );
-                        setEventComposerPlayerId(passerId);
-                        if (pendingPassEndPoint) {
-                          const receiverId = predictLikelyCollectionPlayer(
-                            "pass",
-                            pendingPassEndPoint.xPct,
-                            pendingPassEndPoint.yPct,
-                          );
-                          setEventComposerReceivingPlayerId(
-                            receiverId && receiverId !== passerId ? receiverId : "",
-                          );
-                        } else {
-                          setEventComposerReceivingPlayerId("");
-                        }
-                      }}
-                    >
-                      Pass
                     </button>
                     <button
                       type="button"
@@ -3284,7 +3118,7 @@ function App() {
                         <p className="muted">No matchday squad players available for this fixture.</p>
                       ) : null}
                     </div>
-                    {eventComposerType === "shot" ? (
+                    {eventComposerType === "shot" || eventComposerType === "shot_against" ? (
                       <div className="event-shot-panel">
                       <GoalMouthDiagram
                         value={eventComposerGoalPoint}
@@ -3326,11 +3160,7 @@ function App() {
                             setIsEventComposerOpen(false);
                             setPendingEventPitchPoint(null);
                             setEventComposerGoalPoint(null);
-                            setPendingPassEndPoint(null);
-                            setEventComposerPassOutOfBounds(false);
                             setEventComposerPlayerId("");
-                            setEventComposerReceivingPlayerId("");
-                            setEventComposerPassCompleted(true);
                           }}
                           disabled={isSubmitting}
                         >
@@ -3340,74 +3170,16 @@ function App() {
                       </div>
                     ) : (
                       <div className="event-shot-panel">
-                        {eventComposerType === "pass" ? (
-                          <>
-                            <p className="muted">
-                              Pass from X{pendingEventPitchPoint?.xPct.toFixed(1)}, Y
-                              {pendingEventPitchPoint?.yPct.toFixed(1)} to X
-                              {pendingPassEndPoint?.xPct.toFixed(1) ?? "--"}, Y
-                              {pendingPassEndPoint?.yPct.toFixed(1) ?? "--"}.
-                            </p>
-                            <div className="event-type-toggle">
-                              <button
-                                type="button"
-                                className={`button ${eventComposerPassCompleted ? "primary" : "secondary"}`}
-                                onClick={() => setEventComposerPassCompleted(true)}
-                                disabled={eventComposerPassOutOfBounds}
-                              >
-                                Completed
-                              </button>
-                              <button
-                                type="button"
-                                className={`button ${!eventComposerPassCompleted ? "primary" : "secondary"}`}
-                                onClick={() => setEventComposerPassCompleted(false)}
-                              >
-                                Incomplete
-                              </button>
-                            </div>
-                            {eventComposerPassOutOfBounds ? (
-                              <p className="muted">Pass endpoint is outside the pitch, so this pass is incomplete.</p>
-                            ) : null}
-                            <p className="muted">Optional receiver</p>
-                            <div className="event-player-grid">
-                              <button
-                                type="button"
-                                className={`event-player-tile ${eventComposerReceivingPlayerId === "" ? "selected" : ""}`}
-                                onClick={() => setEventComposerReceivingPlayerId("")}
-                              >
-                                <strong>-</strong>
-                              </button>
-                              {collectionEventPlayers
-                                .filter((player) => player.id !== eventComposerPlayerId)
-                                .map((player) => (
-                                  <button
-                                    key={player.id}
-                                    type="button"
-                                    className={`event-player-tile ${eventComposerReceivingPlayerId === player.id ? "selected" : ""}`}
-                                    onClick={() => setEventComposerReceivingPlayerId(player.id)}
-                                    title={player.display_name}
-                                  >
-                                    <strong>{player.shirt_number ? `#${player.shirt_number}` : "?"}</strong>
-                                  </button>
-                                ))}
-                            </div>
-                          </>
-                        ) : (
-                          <p className="muted">
-                            {eventComposerType === "tackle"
-                              ? "Record tackle at selected pitch location."
-                              : "Record interception at selected pitch location."}
-                          </p>
-                        )}
+                        <p className="muted">
+                          {eventComposerType === "tackle"
+                            ? "Record tackle at selected pitch location."
+                            : "Record interception at selected pitch location."}
+                        </p>
                         <div className="event-outcome-actions">
                           <button
                             className="button primary"
                             type="button"
-                            disabled={
-                              isSubmitting ||
-                              !eventComposerPlayerId ||
-                              (eventComposerType === "pass" && !pendingPassEndPoint)
-                            }
+                            disabled={isSubmitting || !eventComposerPlayerId}
                             onClick={handleSubmitNonShotEvent}
                           >
                             Save {eventComposerType[0].toUpperCase() + eventComposerType.slice(1)}
@@ -3419,11 +3191,7 @@ function App() {
                               setIsEventComposerOpen(false);
                               setPendingEventPitchPoint(null);
                               setEventComposerGoalPoint(null);
-                              setPendingPassEndPoint(null);
-                              setEventComposerPassOutOfBounds(false);
                               setEventComposerPlayerId("");
-                              setEventComposerReceivingPlayerId("");
-                              setEventComposerPassCompleted(true);
                             }}
                             disabled={isSubmitting}
                           >

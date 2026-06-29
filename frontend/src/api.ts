@@ -298,17 +298,13 @@ export async function createCollectionEvent(
   sessionId: string,
   payload: {
     team_id: string;
-    event_kind: "shot" | "tackle" | "interception" | "pass";
+    event_kind: "shot" | "tackle" | "interception" | "shot_against";
     player_id: string | null;
     x_pct: number;
     y_pct: number;
-    end_x_pct?: number | null;
-    end_y_pct?: number | null;
     goal_mouth_y?: number | null;
     goal_mouth_z?: number | null;
     shot_outcome?: "miss" | "post" | "save" | "goal" | null;
-    receiving_player_id?: string | null;
-    pass_completed?: boolean | null;
   },
 ): Promise<CollectionEvent> {
   return request<CollectionEvent>(`/collection-sessions/${encodeURIComponent(sessionId)}/events`, "POST", payload);

@@ -1,6 +1,6 @@
 import type { FormationSlot } from "./formations";
 
-export type SupportedEventKind = "shot" | "tackle" | "interception" | "pass";
+export type SupportedEventKind = "shot" | "tackle" | "interception";
 
 export type LineupPlayerPosition = {
   playerId: string;
