@@ -305,10 +305,11 @@ export async function createCollectionEvent(
   sessionId: string,
   payload: {
     team_id: string;
-    event_kind: "shot" | "tackle" | "interception" | "shot_against";
-    player_id: string | null;
-    x_pct: number;
-    y_pct: number;
+    event_kind: "shot" | "tackle" | "interception" | "shot_against" | "sub";
+    player_id?: string | null;
+    player_in_id?: string | null;
+    x_pct?: number | null;
+    y_pct?: number | null;
     goal_mouth_y?: number | null;
     goal_mouth_z?: number | null;
     shot_outcome?: "miss" | "post" | "save" | "goal" | null;

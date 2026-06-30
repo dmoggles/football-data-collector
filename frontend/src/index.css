@@ -580,6 +580,14 @@ textarea {
   min-width: 0;
 }
 
+.collection-squad-pos {
+  font-size: 0.58rem;
+  color: var(--tl-muted, #7a9ab5);
+  white-space: nowrap;
+  margin-left: auto;
+  padding-left: 0.25rem;
+}
+
 .collection-sub-btn {
   pointer-events: auto;
   margin-top: 0.45rem;
@@ -697,10 +705,18 @@ textarea {
   width: 56px;
   padding: 0.28rem 0.2rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.1rem;
   font: inherit;
   min-height: 2rem;
+}
+
+.event-player-tile-pos {
+  font-size: 0.6rem;
+  color: var(--tl-muted, #7a9ab5);
+  line-height: 1;
 }
 
 .event-player-tile.selected {

@@ -221,12 +221,13 @@ export type CollectionEvent = {
   session_id: string;
   match_id: string;
   team_id: string;
-  event_kind: "shot" | "tackle" | "interception" | "shot_against";
+  event_kind: "shot" | "tackle" | "interception" | "shot_against" | "sub";
   player_id: string | null;
+  player_in_id: string | null;
   period_number: number;
   period_second: number;
-  x_pct: number;
-  y_pct: number;
+  x_pct: number | null;
+  y_pct: number | null;
   goal_mouth_y: number | null;
   goal_mouth_z: number | null;
   shot_outcome: "miss" | "post" | "save" | "goal" | null;

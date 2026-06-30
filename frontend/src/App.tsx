@@ -456,10 +456,12 @@ function App() {
   const [statEvents, setStatEvents] = useState<CollectionEvent[]>([]);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [isStatEventsLoading, setIsStatEventsLoading] = useState(false);
+  const [statMatchPrepPlan, setStatMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [statsPeriodFilter, setStatsPeriodFilter] = useState<number | null>(null);
   const [statsEventKindFilter, setStatsEventKindFilter] = useState<CollectionEvent["event_kind"] | "all">("all");
   const [statsGoalMouthToggle, setStatsGoalMouthToggle] = useState<"our" | "against">("our");
   const [seasonEvents, setSeasonEvents] = useState<CollectionEvent[]>([]);
+  const [seasonMatchPrepPlans, setSeasonMatchPrepPlans] = useState<Map<string, MatchPrepPlan>>(new Map());
   const [isSeasonEventsLoading, setIsSeasonEventsLoading] = useState(false);
   const [selectedSeasonPlayerId, setSelectedSeasonPlayerId] = useState("");
   const [seasonPlayerDetailKindFilter, setSeasonPlayerDetailKindFilter] = useState<CollectionEvent["event_kind"] | "all">("all");
@@ -781,25 +783,33 @@ function App() {
       .filter((row): row is { playerId: string; slot: (typeof collectionFormationSlots)[number] } => !!row);
   }, [collectionEventPlayers, collectionFormationSlots, collectionMatchPrepPlan]);
 
-  const collectionPitchPlayers = useMemo(() => {
-    if (!collectionMatchPrepPlan) return [] as Player[];
-    const onPitchIds = new Set(
-      collectionMatchPrepPlan.players
-        .filter((p) => p.in_matchday_squad && !!p.lineup_slot)
-        .map((p) => p.player_id),
-    );
-    return collectionEventPlayers.filter((p) => onPitchIds.has(p.id));
-  }, [collectionMatchPrepPlan, collectionEventPlayers]);
-
-  const collectionBenchPlayers = useMemo(() => {
-    if (!collectionMatchPrepPlan) return [] as Player[];
-    const benchIds = new Set(
-      collectionMatchPrepPlan.players
-        .filter((p) => p.in_matchday_squad && !p.lineup_slot)
-        .map((p) => p.player_id),
-    );
-    return collectionEventPlayers.filter((p) => benchIds.has(p.id));
-  }, [collectionMatchPrepPlan, collectionEventPlayers]);
+  const collectionCurrentLineup = useMemo(() => {
+    if (!collectionMatchPrepPlan) return { pitchPlayers: [] as Player[], benchPlayers: [] as Player[], slotByPlayerId: new Map<string, string>() };
+    const slotLabelById = new Map(collectionFormationSlots.map((s) => [s.id, s.label]));
+    const slotByPlayerId = new Map<string, string>();
+    const squadPlayerIds = new Set<string>();
+    for (const p of collectionMatchPrepPlan.players) {
+      if (p.in_matchday_squad) squadPlayerIds.add(p.player_id);
+      if (p.lineup_slot) slotByPlayerId.set(p.player_id, slotLabelById.get(p.lineup_slot) ?? p.lineup_slot);
+    }
+    const subEvents = collectionEvents
+      .filter((e) => e.event_kind === "sub")
+      .sort((a, b) => a.period_number - b.period_number || a.period_second - b.period_second);
+    for (const sub of subEvents) {
+      if (!sub.player_id || !sub.player_in_id) continue;
+      const slot = slotByPlayerId.get(sub.player_id);
+      if (slot) {
+        slotByPlayerId.delete(sub.player_id);
+        slotByPlayerId.set(sub.player_in_id, slot);
+      }
+    }
+    const pitchIds = new Set(slotByPlayerId.keys());
+    return {
+      pitchPlayers: collectionEventPlayers.filter((p) => pitchIds.has(p.id)),
+      benchPlayers: collectionEventPlayers.filter((p) => squadPlayerIds.has(p.id) && !pitchIds.has(p.id)),
+      slotByPlayerId,
+    };
+  }, [collectionMatchPrepPlan, collectionFormationSlots, collectionEvents, collectionEventPlayers]);
 
   const dashboardStats = useMemo(
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
@@ -1002,12 +1012,45 @@ function App() {
   const statFilteredEvents = useMemo(
     () =>
       statEvents.filter((e) => {
+        if (e.event_kind === "sub") return false;
         const periodOk = statsPeriodFilter === null || e.period_number === statsPeriodFilter;
         const kindOk = statsEventKindFilter === "all" || e.event_kind === statsEventKindFilter;
         return periodOk && kindOk;
       }),
     [statEvents, statsPeriodFilter, statsEventKindFilter],
   );
+
+  const statPlayerMinutes = useMemo((): Map<string, number> => {
+    if (!statMatchPrepPlan || !selectedStatSession) return new Map();
+    const periodSecs = selectedStatSession.period_length_minutes * 60;
+    const matchTotalSecs = selectedStatSession.total_periods * periodSecs;
+    const onSince = new Map<string, number>();
+    for (const p of statMatchPrepPlan.players) {
+      if (p.lineup_slot) onSince.set(p.player_id, 0);
+    }
+    const intervals = new Map<string, number>();
+    const subEvents = statEvents
+      .filter((e) => e.event_kind === "sub")
+      .sort((a, b) => a.period_number - b.period_number || a.period_second - b.period_second);
+    for (const sub of subEvents) {
+      if (!sub.player_id || !sub.player_in_id) continue;
+      const subSecs = (sub.period_number - 1) * periodSecs + sub.period_second;
+      const startedAt = onSince.get(sub.player_id);
+      if (startedAt !== undefined) {
+        intervals.set(sub.player_id, (intervals.get(sub.player_id) ?? 0) + (subSecs - startedAt));
+        onSince.delete(sub.player_id);
+      }
+      onSince.set(sub.player_in_id, subSecs);
+    }
+    for (const [playerId, startedAt] of onSince) {
+      intervals.set(playerId, (intervals.get(playerId) ?? 0) + (matchTotalSecs - startedAt));
+    }
+    const minutes = new Map<string, number>();
+    for (const [playerId, secs] of intervals) {
+      minutes.set(playerId, Math.round(secs / 60));
+    }
+    return minutes;
+  }, [statMatchPrepPlan, selectedStatSession, statEvents]);
 
   const statPlayerRows = useMemo(() => {
     type PlayerStatRow = {
@@ -1021,23 +1064,24 @@ function App() {
       saves: number;
       conceded: number;
     };
+    const makeRow = (playerId: string): PlayerStatRow => {
+      const p = players.find((pl) => pl.id === playerId);
+      return {
+        playerId,
+        displayName: p?.display_name ?? "Unknown",
+        shirtNumber: p?.shirt_number ?? null,
+        shots: 0,
+        goals: 0,
+        tackles: 0,
+        interceptions: 0,
+        saves: 0,
+        conceded: 0,
+      };
+    };
     const map = new Map<string, PlayerStatRow>();
     for (const e of statEvents) {
       if (!e.player_id) continue;
-      if (!map.has(e.player_id)) {
-        const p = players.find((pl) => pl.id === e.player_id);
-        map.set(e.player_id, {
-          playerId: e.player_id,
-          displayName: p?.display_name ?? "Unknown",
-          shirtNumber: p?.shirt_number ?? null,
-          shots: 0,
-          goals: 0,
-          tackles: 0,
-          interceptions: 0,
-          saves: 0,
-          conceded: 0,
-        });
-      }
+      if (!map.has(e.player_id)) map.set(e.player_id, makeRow(e.player_id));
       const row = map.get(e.player_id)!;
       if (e.event_kind === "shot") {
         row.shots += 1;
@@ -1051,10 +1095,13 @@ function App() {
         row.interceptions += 1;
       }
     }
+    for (const playerId of statPlayerMinutes.keys()) {
+      if (!map.has(playerId)) map.set(playerId, makeRow(playerId));
+    }
     return [...map.values()].sort(
       (a, b) => b.shots + b.goals + b.saves + b.tackles + b.interceptions - (a.shots + a.goals + a.saves + a.tackles + a.interceptions),
     );
-  }, [statEvents, players]);
+  }, [statEvents, players, statPlayerMinutes]);
 
   const statGoalDimensions = useMemo(
     () => getGoalDimensions(selectedStatSession?.format as MatchFormat | undefined),
@@ -1071,11 +1118,47 @@ function App() {
     [statEvents],
   );
 
+  const seasonPlayerMinutes = useMemo((): Map<string, number> => {
+    const totals = new Map<string, number>();
+    for (const [sessionId, plan] of seasonMatchPrepPlans) {
+      const session = allCollectionSessions.find((s) => s.id === sessionId);
+      if (!session) continue;
+      const periodSecs = session.period_length_minutes * 60;
+      const matchTotalSecs = session.total_periods * periodSecs;
+      const onSince = new Map<string, number>();
+      for (const p of plan.players) {
+        if (p.lineup_slot) onSince.set(p.player_id, 0);
+      }
+      const subEvents = seasonEvents
+        .filter((e) => e.session_id === sessionId && e.event_kind === "sub")
+        .sort((a, b) => a.period_number - b.period_number || a.period_second - b.period_second);
+      for (const sub of subEvents) {
+        if (!sub.player_id || !sub.player_in_id) continue;
+        const subSecs = (sub.period_number - 1) * periodSecs + sub.period_second;
+        const startedAt = onSince.get(sub.player_id);
+        if (startedAt !== undefined) {
+          totals.set(sub.player_id, (totals.get(sub.player_id) ?? 0) + (subSecs - startedAt));
+          onSince.delete(sub.player_id);
+        }
+        onSince.set(sub.player_in_id, subSecs);
+      }
+      for (const [playerId, startedAt] of onSince) {
+        totals.set(playerId, (totals.get(playerId) ?? 0) + (matchTotalSecs - startedAt));
+      }
+    }
+    const minutes = new Map<string, number>();
+    for (const [playerId, secs] of totals) {
+      minutes.set(playerId, Math.round(secs / 60));
+    }
+    return minutes;
+  }, [seasonMatchPrepPlans, allCollectionSessions, seasonEvents]);
+
   const seasonPlayerRows = useMemo(() => {
     type SeasonPlayerRow = {
       playerId: string;
       displayName: string;
       shirtNumber: number | null;
+      minutes: number;
       matches: number;
       shots: number;
       goals: number;
@@ -1084,24 +1167,28 @@ function App() {
       saves: number;
       conceded: number;
     };
+    const makeRow = (playerId: string): SeasonPlayerRow => {
+      const p = playersForSelectedTeam.find((pl) => pl.id === playerId);
+      return {
+        playerId,
+        displayName: p?.display_name ?? "Unknown",
+        shirtNumber: p?.shirt_number ?? null,
+        minutes: seasonPlayerMinutes.get(playerId) ?? 0,
+        matches: 0,
+        shots: 0,
+        goals: 0,
+        tackles: 0,
+        interceptions: 0,
+        saves: 0,
+        conceded: 0,
+      };
+    };
     const sessionsByPlayer = new Map<string, Set<string>>();
     const map = new Map<string, SeasonPlayerRow>();
     for (const e of seasonEvents) {
-      if (!e.player_id) continue;
+      if (!e.player_id || e.event_kind === "sub") continue;
       if (!map.has(e.player_id)) {
-        const p = players.find((pl) => pl.id === e.player_id);
-        map.set(e.player_id, {
-          playerId: e.player_id,
-          displayName: p?.display_name ?? "Unknown",
-          shirtNumber: p?.shirt_number ?? null,
-          matches: 0,
-          shots: 0,
-          goals: 0,
-          tackles: 0,
-          interceptions: 0,
-          saves: 0,
-          conceded: 0,
-        });
+        map.set(e.player_id, makeRow(e.player_id));
         sessionsByPlayer.set(e.player_id, new Set());
       }
       sessionsByPlayer.get(e.player_id)!.add(e.session_id);
@@ -1122,10 +1209,13 @@ function App() {
       const row = map.get(playerId);
       if (row) row.matches = sessions.size;
     }
+    for (const p of playersForSelectedTeam) {
+      if (!map.has(p.id)) map.set(p.id, makeRow(p.id));
+    }
     return [...map.values()].sort(
-      (a, b) => b.goals + b.shots + b.saves + b.tackles + b.interceptions - (a.goals + a.shots + a.saves + a.tackles + a.interceptions),
+      (a, b) => b.minutes - a.minutes || b.goals + b.shots + b.saves + b.tackles + b.interceptions - (a.goals + a.shots + a.saves + a.tackles + a.interceptions),
     );
-  }, [seasonEvents, players]);
+  }, [seasonEvents, playersForSelectedTeam, seasonPlayerMinutes]);
 
   const selectedSeasonPlayerEvents = useMemo(
     () => seasonEvents.filter((e) => e.player_id === selectedSeasonPlayerId),
@@ -1315,14 +1405,25 @@ function App() {
   const loadSeasonEvents = useCallback(async (sessions: CollectionSession[], teamId: string) => {
     if (!sessions.length || !teamId) {
       setSeasonEvents([]);
+      setSeasonMatchPrepPlans(new Map());
       return;
     }
     setIsSeasonEventsLoading(true);
     try {
-      const results = await Promise.all(sessions.map((s) => listCollectionEvents(s.id, teamId)));
-      setSeasonEvents(results.flat());
+      const [eventResults, planResults] = await Promise.all([
+        Promise.all(sessions.map((s) => listCollectionEvents(s.id, teamId))),
+        Promise.all(sessions.map((s) => getMatchPrepPlan(s.match_id, teamId).catch(() => null))),
+      ]);
+      setSeasonEvents(eventResults.flat());
+      const planMap = new Map<string, MatchPrepPlan>();
+      sessions.forEach((s, i) => {
+        const plan = planResults[i];
+        if (plan) planMap.set(s.id, plan);
+      });
+      setSeasonMatchPrepPlans(planMap);
     } catch {
       setSeasonEvents([]);
+      setSeasonMatchPrepPlans(new Map());
     } finally {
       setIsSeasonEventsLoading(false);
     }
@@ -1458,14 +1559,22 @@ function App() {
   useEffect(() => {
     if (!user || section !== "stats" || !selectedStatSessionId || !selectedTeamId) {
       setStatEvents([]);
+      setStatMatchPrepPlan(null);
       return;
     }
+    const session = allCollectionSessions.find((s) => s.id === selectedStatSessionId);
     setIsStatEventsLoading(true);
-    void listCollectionEvents(selectedStatSessionId, selectedTeamId)
-      .then(setStatEvents)
-      .catch(() => setStatEvents([]))
+    void Promise.all([
+      listCollectionEvents(selectedStatSessionId, selectedTeamId),
+      session ? getMatchPrepPlan(session.match_id, selectedTeamId).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([events, plan]) => {
+        setStatEvents(events);
+        setStatMatchPrepPlan(plan);
+      })
+      .catch(() => { setStatEvents([]); setStatMatchPrepPlan(null); })
       .finally(() => setIsStatEventsLoading(false));
-  }, [section, selectedStatSessionId, selectedTeamId, user]);
+  }, [section, selectedStatSessionId, selectedTeamId, user, allCollectionSessions]);
 
   useEffect(() => {
     if (!user || section !== "stats" || statsTopView !== "season" || !selectedTeamId || !allCollectionSessions.length) {
@@ -1720,25 +1829,29 @@ function App() {
     }
   };
 
-  const handleConfirmSubstitution = () => {
-    if (!subPlayerOutId || !subPlayerInId || !collectionMatchPrepPlan) return;
-    const outPlayer = collectionMatchPrepPlan.players.find((p) => p.player_id === subPlayerOutId);
-    const slotToTransfer = outPlayer?.lineup_slot;
-    if (!slotToTransfer) return;
-    setCollectionMatchPrepPlan((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        players: prev.players.map((p) => {
-          if (p.player_id === subPlayerOutId) return { ...p, lineup_slot: null };
-          if (p.player_id === subPlayerInId) return { ...p, lineup_slot: slotToTransfer };
-          return p;
-        }),
-      };
-    });
-    setIsSubComposerOpen(false);
-    setSubPlayerOutId("");
-    setSubPlayerInId("");
+  const handleConfirmSubstitution = async () => {
+    if (!subPlayerOutId || !subPlayerInId || !selectedCollectionSessionId || !selectedTeamId) return;
+    setIsSubmitting(true);
+    try {
+      const created = await createCollectionEvent(selectedCollectionSessionId, {
+        team_id: selectedTeamId,
+        event_kind: "sub",
+        player_id: subPlayerOutId,
+        player_in_id: subPlayerInId,
+      });
+      setCollectionEvents((prev) => [...prev, created]);
+      setIsSubComposerOpen(false);
+      setSubPlayerOutId("");
+      setSubPlayerInId("");
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      } else {
+        setError("Failed to record substitution");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getCollectionPitchPoint = (
@@ -3109,7 +3222,9 @@ function App() {
                 setStatsView("list");
                 setSelectedStatSessionId("");
                 setStatEvents([]);
+                setStatMatchPrepPlan(null);
                 setSeasonEvents([]);
+                setSeasonMatchPrepPlans(new Map());
                 setSelectedSeasonPlayerId("");
               }}
               options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
@@ -3309,8 +3424,8 @@ function App() {
                             <span
                               className={`collection-event-marker ${eventRow.event_kind}`}
                               style={{
-                                left: `${100 - eventRow.y_pct}%`,
-                                top: `${100 - eventRow.x_pct}%`,
+                                left: `${100 - (eventRow.y_pct ?? 0)}%`,
+                                top: `${100 - (eventRow.x_pct ?? 0)}%`,
                               }}
                               title={`${eventRow.event_kind === "shot_against" ? "Shot Against" : eventRow.event_kind[0].toUpperCase() + eventRow.event_kind.slice(1)} · ${
                                 eventRow.event_kind === "shot" || eventRow.event_kind === "shot_against"
@@ -3323,25 +3438,31 @@ function App() {
                         {collectionMatchPrepPlan ? (
                           <div className="collection-squad-overlay">
                             <p className="collection-squad-section">On Pitch</p>
-                            {collectionPitchPlayers.map((p) => (
+                            {collectionCurrentLineup.pitchPlayers.map((p) => (
                               <div key={p.id} className="collection-squad-player">
                                 {p.shirt_number != null ? (
                                   <span className="collection-squad-num">{p.shirt_number}</span>
                                 ) : null}
                                 <span className="collection-squad-name">{p.display_name}</span>
+                                {collectionCurrentLineup.slotByPlayerId.get(p.id) ? (
+                                  <span className="collection-squad-pos">{collectionCurrentLineup.slotByPlayerId.get(p.id)}</span>
+                                ) : null}
                               </div>
                             ))}
-                            {collectionBenchPlayers.length > 0 ? (
+                            {collectionCurrentLineup.benchPlayers.length > 0 ? (
                               <>
                                 <p className="collection-squad-section" style={{ marginTop: "0.5rem" }}>
                                   Bench
                                 </p>
-                                {collectionBenchPlayers.map((p) => (
+                                {collectionCurrentLineup.benchPlayers.map((p) => (
                                   <div key={p.id} className="collection-squad-player">
                                     {p.shirt_number != null ? (
                                       <span className="collection-squad-num">{p.shirt_number}</span>
                                     ) : null}
                                     <span className="collection-squad-name">{p.display_name}</span>
+                                    {p.position ? (
+                                      <span className="collection-squad-pos">{p.position}</span>
+                                    ) : null}
                                   </div>
                                 ))}
                                 <button
@@ -3409,7 +3530,7 @@ function App() {
                     <div className="event-player-panel">
                       <p className="muted" style={{ fontSize: "0.75rem", marginBottom: "0.3rem" }}>Player Off</p>
                       <div className="event-player-grid">
-                        {collectionPitchPlayers.map((p) => (
+                        {collectionCurrentLineup.pitchPlayers.map((p) => (
                           <button
                             key={p.id}
                             type="button"
@@ -3418,19 +3539,22 @@ function App() {
                             onClick={() => setSubPlayerOutId(p.id)}
                           >
                             <strong>{p.shirt_number != null ? `#${p.shirt_number}` : "?"}</strong>
+                            {collectionCurrentLineup.slotByPlayerId.get(p.id) ? (
+                              <span className="event-player-tile-pos">{collectionCurrentLineup.slotByPlayerId.get(p.id)}</span>
+                            ) : null}
                           </button>
                         ))}
                       </div>
                       {subPlayerOutId ? (
                         <p className="muted" style={{ fontSize: "0.72rem" }}>
-                          {collectionPitchPlayers.find((p) => p.id === subPlayerOutId)?.display_name}
+                          {collectionCurrentLineup.pitchPlayers.find((p) => p.id === subPlayerOutId)?.display_name}
                         </p>
                       ) : null}
                     </div>
                     <div className="event-player-panel">
                       <p className="muted" style={{ fontSize: "0.75rem", marginBottom: "0.3rem" }}>Player On</p>
                       <div className="event-player-grid">
-                        {collectionBenchPlayers.map((p) => (
+                        {collectionCurrentLineup.benchPlayers.map((p) => (
                           <button
                             key={p.id}
                             type="button"
@@ -3439,12 +3563,15 @@ function App() {
                             onClick={() => setSubPlayerInId(p.id)}
                           >
                             <strong>{p.shirt_number != null ? `#${p.shirt_number}` : "?"}</strong>
+                            {p.position ? (
+                              <span className="event-player-tile-pos">{p.position}</span>
+                            ) : null}
                           </button>
                         ))}
                       </div>
                       {subPlayerInId ? (
                         <p className="muted" style={{ fontSize: "0.72rem" }}>
-                          {collectionBenchPlayers.find((p) => p.id === subPlayerInId)?.display_name}
+                          {collectionCurrentLineup.benchPlayers.find((p) => p.id === subPlayerInId)?.display_name}
                         </p>
                       ) : null}
                     </div>
@@ -4864,8 +4991,8 @@ function App() {
                                     key={ev.id}
                                     className={`collection-event-marker ${ev.event_kind}`}
                                     style={{
-                                      left: `${100 - ev.y_pct}%`,
-                                      top: `${100 - ev.x_pct}%`,
+                                      left: `${100 - (ev.y_pct ?? 0)}%`,
+                                      top: `${100 - (ev.x_pct ?? 0)}%`,
                                     }}
                                     title={`${ev.event_kind} · ${ev.shot_outcome ?? "recorded"} · P${ev.period_number} ${formatClock(ev.period_second)}`}
                                   />
@@ -5018,6 +5145,7 @@ function App() {
                                 <thead>
                                   <tr>
                                     <th>Player</th>
+                                    {statPlayerMinutes.size > 0 ? <th>Min.</th> : null}
                                     <th>Shots</th>
                                     <th>Goals</th>
                                     <th>Saves</th>
@@ -5033,6 +5161,13 @@ function App() {
                                         {row.shirtNumber ? <span className="muted">#{row.shirtNumber} </span> : null}
                                         {row.displayName}
                                       </td>
+                                      {statPlayerMinutes.size > 0 ? (
+                                        <td className="muted">
+                                          {statPlayerMinutes.has(row.playerId)
+                                            ? statPlayerMinutes.get(row.playerId)
+                                            : "–"}
+                                        </td>
+                                      ) : null}
                                       <td>{row.shots}</td>
                                       <td>
                                         {row.goals > 0 ? (
@@ -5182,8 +5317,8 @@ function App() {
                                           key={ev.id}
                                           className={`collection-event-marker ${ev.event_kind}`}
                                           style={{
-                                            left: `${100 - ev.y_pct}%`,
-                                            top: `${100 - ev.x_pct}%`,
+                                            left: `${100 - (ev.y_pct ?? 0)}%`,
+                                            top: `${100 - (ev.x_pct ?? 0)}%`,
                                           }}
                                           title={ev.event_kind}
                                         />
@@ -5412,6 +5547,7 @@ function App() {
                                 <thead>
                                   <tr>
                                     <th>Player</th>
+                                    <th>Min.</th>
                                     <th>Games</th>
                                     <th>Shots</th>
                                     <th>Goals</th>
@@ -5438,6 +5574,7 @@ function App() {
                                         ) : null}
                                         {row.displayName}
                                       </td>
+                                      <td>{row.minutes > 0 ? row.minutes : "–"}</td>
                                       <td>{row.matches}</td>
                                       <td>{row.shots}</td>
                                       <td>
@@ -5471,7 +5608,7 @@ function App() {
                               </table>
                             </div>
                           ) : (
-                            <p className="muted">No player-attributed events recorded yet.</p>
+                            <p className="muted">No players in this team yet.</p>
                           )}
                         </>
                       )
