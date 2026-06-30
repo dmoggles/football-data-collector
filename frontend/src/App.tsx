@@ -9,6 +9,8 @@ import { AdminView } from "./views/AdminView";
 import { CollectionView } from "./views/CollectionView";
 import { FixturesView } from "./views/FixturesView";
 import { MatchPrepView } from "./views/MatchPrepView";
+import { DashboardView } from "./views/DashboardView";
+import { TeamsView } from "./views/TeamsView";
 import { StatsView } from "./views/StatsView";
 import {
   type AuthMode,
@@ -18,16 +20,12 @@ import {
 } from "./constants";
 import {
   isTeamAdminRole,
-  formatClock,
   buildCollectionSessionWsUrl,
 } from "./utils/formatters";
 import {
-  createTeam,
-  deleteTeam,
   getAdminOverview,
   getAdminAuditLogs,
   getCollectionSession,
-  getMatchPrepPlanValidation,
   getMe,
   listActiveCollectionSessions,
   listFixtures,
@@ -40,8 +38,6 @@ import {
   logout,
   resolveApiAssetUrl,
   register,
-  startCollectionSession,
-  uploadClubLogo,
 } from "./api";
 import type {
   AdminAuditLogEntry,
@@ -49,7 +45,6 @@ import type {
   Fixture,
   CollectionSession,
   MatchPrepFixture,
-  MatchPrepPlanValidation,
   Player,
   Team,
   TeamDirectory,
@@ -78,15 +73,10 @@ function App() {
   const [collectionSessionSocketState, setCollectionSessionSocketState] = useState<"idle" | "connecting" | "live">(
     "idle",
   );
-  const [selectedCollectionFixtureId, setSelectedCollectionFixtureId] = useState("");
-  const [nextMatchPlanValidation, setNextMatchPlanValidation] = useState<MatchPrepPlanValidation | null>(null);
-  const [isNextMatchPlanValidationLoading, setIsNextMatchPlanValidationLoading] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLogEntry[]>([]);
-  const [clubName, setClubName] = useState("");
-  const [teamName, setTeamName] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [selectedFixtureForMatchPrep, setSelectedFixtureForMatchPrep] = useState("");
 
@@ -113,16 +103,6 @@ function App() {
     () => resolveApiAssetUrl(selectedTeam?.club_logo_url),
     [selectedTeam],
   );
-  const startableCollectionFixtures = useMemo(() => {
-    if (!selectedTeamId) {
-      return [] as Fixture[];
-    }
-    return fixtures.filter(
-      (fixture) =>
-        (fixture.home_team_id === selectedTeamId || fixture.away_team_id === selectedTeamId) &&
-        fixture.status.toLowerCase() !== "cancelled",
-    );
-  }, [fixtures, selectedTeamId]);
   const selectedCollectionSession = useMemo(() => {
     if (!selectedCollectionSessionId) {
       return activeCollectionSessions[0] ?? null;
@@ -138,47 +118,6 @@ function App() {
     }
     return players.filter((player) => player.team_id === selectedTeamId);
   }, [players, selectedTeamId]);
-  const dashboardStats = useMemo(
-    () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
-    [fixtures.length, players.length, teamMembers.length, teams.length],
-  );
-  const nextMatchTile = useMemo(() => {
-    const now = Date.now();
-    const upcoming = fixtures
-      .filter((fixture) => fixture.status.toLowerCase() !== "cancelled")
-      .map((fixture) => {
-        const kickoff = fixture.kickoff_at ? new Date(fixture.kickoff_at) : null;
-        return { fixture, kickoff };
-      })
-      .filter(({ kickoff }) => kickoff && kickoff.getTime() >= now)
-      .sort((a, b) => (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0));
-
-    const next = upcoming[0];
-    if (!next || !next.kickoff) {
-      return {
-        title: "No upcoming fixtures",
-        subtitle: "Schedule a fixture to see it here.",
-        fixtureId: "",
-      };
-    }
-
-    const fixture = next.fixture;
-    const selectedTeamIsHome = selectedTeamId ? fixture.home_team_id === selectedTeamId : true;
-    const opponent = selectedTeamIsHome
-      ? `${fixture.away_club_name} ${fixture.away_team_name}`
-      : `${fixture.home_club_name} ${fixture.home_team_name}`;
-    return {
-      title: opponent,
-      subtitle: next.kickoff.toLocaleString(undefined, {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      fixtureId: fixture.id,
-    };
-  }, [fixtures, selectedTeamId]);
   const roleByTeamId = useMemo(() => {
     const mapping: Partial<Record<string, TeamRole>> = {};
     for (const team of teams) {
@@ -370,48 +309,6 @@ function App() {
     };
   }, [loadActiveCollectionSessions, selectedTeamId, user]);
 
-  useEffect(() => {
-    if (!startableCollectionFixtures.length) {
-      setSelectedCollectionFixtureId("");
-      return;
-    }
-    setSelectedCollectionFixtureId((current) =>
-      startableCollectionFixtures.some((fixture) => fixture.id === current)
-        ? current
-        : startableCollectionFixtures[0].id,
-    );
-  }, [startableCollectionFixtures]);
-
-  useEffect(() => {
-    if (!user || !selectedTeamId || !nextMatchTile.fixtureId || !selectedTeamCanManage) {
-      setNextMatchPlanValidation(null);
-      setIsNextMatchPlanValidationLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setIsNextMatchPlanValidationLoading(true);
-    void getMatchPrepPlanValidation(nextMatchTile.fixtureId, selectedTeamId)
-      .then((result) => {
-        if (!cancelled) {
-          setNextMatchPlanValidation(result);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setNextMatchPlanValidation(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsNextMatchPlanValidationLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [nextMatchTile.fixtureId, selectedTeamCanManage, selectedTeamId, user]);
 
   useEffect(() => {
     if (isActiveMatchSession) {
@@ -481,45 +378,6 @@ function App() {
     return mode === "login" ? "Log In" : "Create Account";
   }, [isSubmitting, mode]);
 
-  const handleStartCollectionSession = async () => {
-    if (!selectedTeamId || !selectedCollectionFixtureId) {
-      return;
-    }
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      const created = await startCollectionSession({
-        match_id: selectedCollectionFixtureId,
-        team_id: selectedTeamId,
-      });
-      await loadActiveCollectionSessions(selectedTeamId);
-      setSelectedCollectionSessionId(created.id);
-      setSection("collection");
-    } catch (requestError) {
-      if (requestError instanceof Error && requestError.message.includes("Confirm to continue")) {
-        const confirmStart = window.confirm(`${requestError.message}\n\nStart anyway?`);
-        if (confirmStart) {
-          const created = await startCollectionSession({
-            match_id: selectedCollectionFixtureId,
-            team_id: selectedTeamId,
-            confirm_off_schedule: true,
-          });
-          await loadActiveCollectionSessions(selectedTeamId);
-          setSelectedCollectionSessionId(created.id);
-          setSection("collection");
-          setIsSubmitting(false);
-          return;
-        }
-      }
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to start collection session");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -589,89 +447,6 @@ function App() {
     }
   };
 
-  const handleCreateTeam = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const created = await createTeam({
-        club_name: clubName.trim(),
-        team_name: teamName.trim(),
-      });
-      setClubName("");
-      setTeamName("");
-      setTeams((existing) =>
-        [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)),
-      );
-      setTeamDirectory((existing) =>
-        [
-          ...existing,
-          {
-            id: created.id,
-            club_id: created.club_id,
-            club_name: created.club_name,
-            club_logo_url: created.club_logo_url,
-            team_name: created.team_name,
-            display_name: created.display_name,
-          },
-        ].sort((a, b) => a.display_name.localeCompare(b.display_name)),
-      );
-      setSelectedTeamId((current) => current || created.id);
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to create team");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteTeam = async (teamId: string) => {
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      await deleteTeam(teamId);
-      const remainingTeams = teams.filter((team) => team.id !== teamId);
-      setTeams(remainingTeams);
-      setTeamDirectory((existing) => existing.filter((team) => team.id !== teamId));
-      setPlayers((existing) => existing.filter((player) => player.team_id !== teamId));
-
-      if (selectedTeamId === teamId) {
-        const nextTeamId = remainingTeams[0]?.id ?? "";
-        setSelectedTeamId(nextTeamId);
-        if (!nextTeamId) {
-          setFixtures([]);
-        }
-        setSelectedFixtureForMatchPrep("");
-      }
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to delete team");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleUploadClubLogo = async (clubId: string, file: File | null) => {
-    if (!clubId || !file) return;
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      await uploadClubLogo(clubId, file);
-      await Promise.all([loadWorkspaceData(selectedTeamId), loadAdminData()]);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to upload club logo");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -828,129 +603,24 @@ function App() {
         {error ? <p className="error-banner">{error}</p> : null}
 
         {section === "dashboard" ? (
-          <section className="section-card">
-            <div className="stats-grid">
-            <article>
-              <h3>Teams</h3>
-              <p>{dashboardStats.teams}</p>
-            </article>
-            <article>
-              <h3>Fixtures</h3>
-              <p>{dashboardStats.fixtures}</p>
-            </article>
-            <article>
-              <h3>Players</h3>
-              <p>{dashboardStats.players}</p>
-            </article>
-              <article>
-                <h3>Members</h3>
-                <p>{dashboardStats.members}</p>
-              </article>
-            <article>
-                <h3>Next Match</h3>
-                <p>{nextMatchTile.title}</p>
-                <span className="muted">{nextMatchTile.subtitle}</span>
-                {nextMatchTile.fixtureId ? (
-                  <div className="next-match-plan-status">
-                    {isNextMatchPlanValidationLoading ? (
-                      <p className="muted">Checking match plan...</p>
-                    ) : null}
-                    {!selectedTeamCanManage ? (
-                      <p className="muted">Manager access required to validate plan.</p>
-                    ) : null}
-                    {selectedTeamCanManage && !isNextMatchPlanValidationLoading && nextMatchPlanValidation ? (
-                      <>
-                        {nextMatchPlanValidation.valid && nextMatchPlanValidation.warnings.length === 0 ? (
-                          <p className="muted">Match plan is valid.</p>
-                        ) : null}
-                        {!nextMatchPlanValidation.valid ? (
-                          <p className="muted">
-                            Match plan invalid:{" "}
-                            {nextMatchPlanValidation.errors[0] ?? "one or more segments are incomplete."}
-                          </p>
-                        ) : null}
-                        {nextMatchPlanValidation.valid && nextMatchPlanValidation.warnings.length > 0 ? (
-                          <p className="muted">
-                            Match plan valid with warning:{" "}
-                            {nextMatchPlanValidation.warnings[0] ?? "some players are out of position."}
-                          </p>
-                        ) : null}
-                      </>
-                    ) : null}
-                    <button
-                      className="button secondary"
-                      type="button"
-                      onClick={() => {
-                        setSection("match_prep");
-                        if (nextMatchTile.fixtureId) {
-                          setSelectedFixtureForMatchPrep(nextMatchTile.fixtureId);
-                        }
-                      }}
-                      disabled={!selectedTeamCanManage || !nextMatchTile.fixtureId}
-                    >
-                      Open Match Prep
-                    </button>
-                  </div>
-                ) : null}
-              </article>
-              <article>
-                <h3>Live Match</h3>
-                {!selectedTeamId ? <p className="muted">Select a team.</p> : null}
-                {selectedTeamId && activeCollectionSessions.length === 0 ? (
-                  <p className="muted">No live collection session.</p>
-                ) : null}
-                {activeCollectionSessions[0] ? (
-                  <>
-                    <p>
-                      {activeCollectionSessions[0].fixture_label} · P{activeCollectionSessions[0].period_number}/
-                      {activeCollectionSessions[0].total_periods}
-                    </p>
-                    <span className="muted">{formatClock(activeCollectionSessions[0].elapsed_seconds)}</span>
-                    <div style={{ marginTop: "0.45rem" }}>
-                      <button
-                        className="button secondary"
-                        type="button"
-                        onClick={() => {
-                          setSelectedCollectionSessionId(activeCollectionSessions[0].id);
-                          setSection("collection");
-                        }}
-                      >
-                        Go To Match Screen
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-                {selectedTeamCanManage ? (
-                  <div className="collection-start-row">
-                    <SearchableSelect
-                      value={selectedCollectionFixtureId}
-                      onChange={setSelectedCollectionFixtureId}
-                      options={startableCollectionFixtures.map((fixture) => {
-                        const opposition =
-                          fixture.home_team_id === selectedTeamId
-                            ? `${fixture.away_club_name} ${fixture.away_team_name}`
-                            : `${fixture.home_club_name} ${fixture.home_team_name}`;
-                        return {
-                          value: fixture.id,
-                          label: `${opposition}${fixture.kickoff_at ? ` · ${new Date(fixture.kickoff_at).toLocaleString()}` : ""}`,
-                        };
-                      })}
-                      placeholder="Select fixture"
-                      disabled={!selectedTeamId || startableCollectionFixtures.length === 0}
-                    />
-                    <button
-                      className="button primary"
-                      type="button"
-                      disabled={!selectedTeamId || !selectedCollectionFixtureId || isSubmitting}
-                      onClick={handleStartCollectionSession}
-                    >
-                      Start Game
-                    </button>
-                  </div>
-                ) : null}
-              </article>
-            </div>
-          </section>
+          <DashboardView
+            selectedTeamId={selectedTeamId}
+            selectedTeamCanManage={selectedTeamCanManage}
+            teams={teams}
+            fixtures={fixtures}
+            players={players}
+            teamMembers={teamMembers}
+            activeCollectionSessions={activeCollectionSessions}
+            onOpenMatchPrep={(fixtureId) => {
+              setSection("match_prep");
+              setSelectedFixtureForMatchPrep(fixtureId);
+            }}
+            onOpenCollection={(sessionId) => {
+              setSelectedCollectionSessionId(sessionId);
+              setSection("collection");
+            }}
+            onActiveSessionsChanged={() => loadActiveCollectionSessions(selectedTeamId)}
+          />
         ) : null}
 
         {section === "collection" ? (
@@ -984,72 +654,14 @@ function App() {
         ) : null}
 
         {section === "teams" ? (
-          <section className="section-card two-col">
-            <form className="stack-form" onSubmit={handleCreateTeam}>
-              <h3>Create Team</h3>
-              {selectedTeam && isSuperAdmin ? (
-                <div className="club-logo-panel">
-                  <p className="muted">Club Logo - {selectedTeam.club_name}</p>
-                  {selectedTeamClubLogoUrl ? (
-                    <img
-                      src={selectedTeamClubLogoUrl}
-                      alt={`${selectedTeam.club_name} logo`}
-                      className="club-logo-preview"
-                    />
-                  ) : (
-                    <p className="muted">No logo uploaded yet.</p>
-                  )}
-                  <label className="button secondary file-upload-button" aria-disabled={isSubmitting || !isSuperAdmin}>
-                    Upload Club Logo
-                    <input
-                      type="file"
-                      accept="image/png,image/webp"
-                      disabled={isSubmitting || !isSuperAdmin}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        void handleUploadClubLogo(selectedTeam.club_id, file);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                  </label>
-                </div>
-              ) : null}
-              <SearchableSelect
-                value={clubName}
-                onChange={setClubName}
-                options={clubNameOptions}
-                placeholder="Select club"
-              />
-              <input
-                placeholder="Team name"
-                value={teamName}
-                onChange={(event) => setTeamName(event.target.value)}
-                required
-              />
-              <button className="button primary" disabled={isSubmitting} type="submit">
-                Add Team
-              </button>
-            </form>
-
-            <div>
-              <h3>Your Teams</h3>
-              {teams.length === 0 ? <p className="muted">No teams yet.</p> : null}
-              {teams.map((team) => (
-                <div className="list-row" key={team.id}>
-                  <span>{team.display_name}</span>
-                  <button
-                    className="button secondary"
-                    onClick={() => handleDeleteTeam(team.id)}
-                    type="button"
-                    disabled={isSubmitting || (team.my_role ? !isTeamAdminRole(team.my_role) : false)}
-                    title={team.my_role && !isTeamAdminRole(team.my_role) ? "Manager access required" : "Delete team"}
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
+          <TeamsView
+            teams={teams}
+            selectedTeam={selectedTeam}
+            selectedTeamClubLogoUrl={selectedTeamClubLogoUrl}
+            isSuperAdmin={isSuperAdmin}
+            clubNameOptions={clubNameOptions}
+            onWorkspaceChanged={async () => { await loadWorkspaceData(selectedTeamId); await loadAdminData(); }}
+          />
         ) : null}
 
         {section === "match_prep" ? (
