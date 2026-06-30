@@ -7,7 +7,7 @@ import {
   listCollectionEvents,
   startCollectionSessionPeriod,
 } from "../api";
-import { GoalMouthDiagram, buildGoalViewWindow, toMarkerStyle, FRAME } from "../components/GoalMouthDiagram";
+import { GoalMouthDiagram } from "../components/GoalMouthDiagram";
 import { PitchDiagram } from "../components/PitchDiagram";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { predictLikelyPlayerId } from "../domain/eventPredictions";
