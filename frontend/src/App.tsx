@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent, MouseEvent as ReactMouseEvent } from "react";
+import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 import "./index.css";
-import { GoalMouthDiagram } from "./components/GoalMouthDiagram";
+import { GoalMouthDiagram, buildGoalViewWindow, toMarkerStyle, FRAME } from "./components/GoalMouthDiagram";
 import { PitchDiagram } from "./components/PitchDiagram";
 import { getGoalDimensions, getGoalWidthSpanPct } from "./domain/goalDimensions";
 import { predictLikelyPlayerId } from "./domain/eventPredictions";
@@ -34,6 +35,7 @@ import {
   getMatchPrepPlanValidation,
   getMe,
   listActiveCollectionSessions,
+  listAllCollectionSessions,
   listCollectionEvents,
   listFixtures,
   listCoachingNotes,
@@ -80,7 +82,7 @@ import type {
 } from "./types/auth";
 
 type AuthMode = "login" | "register";
-type Section = "dashboard" | "collection" | "fixtures" | "match_prep" | "players" | "teams" | "members" | "settings" | "admin";
+type Section = "dashboard" | "collection" | "fixtures" | "match_prep" | "players" | "teams" | "members" | "settings" | "stats" | "admin";
 type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
 type FixtureVenue = "home" | "away";
 
@@ -93,6 +95,7 @@ const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shor
   { id: "players", label: "Players", shortLabel: "P" },
   { id: "teams", label: "Teams", shortLabel: "T" },
   { id: "members", label: "Members", shortLabel: "M" },
+  { id: "stats", label: "Stats", shortLabel: "St" },
   { id: "settings", label: "Settings", shortLabel: "S" },
 ];
 const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
@@ -427,6 +430,9 @@ function App() {
   const [collectionEvents, setCollectionEvents] = useState<CollectionEvent[]>([]);
   const [collectionMatchPrepPlan, setCollectionMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [isEventComposerOpen, setIsEventComposerOpen] = useState(false);
+  const [isSubComposerOpen, setIsSubComposerOpen] = useState(false);
+  const [subPlayerOutId, setSubPlayerOutId] = useState("");
+  const [subPlayerInId, setSubPlayerInId] = useState("");
   const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
   const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "shot_against">("shot");
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
@@ -443,6 +449,21 @@ function App() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLogEntry[]>([]);
+  const [statsTopView, setStatsTopView] = useState<"matches" | "season">("matches");
+  const [statsView, setStatsView] = useState<"list" | "detail">("list");
+  const [allCollectionSessions, setAllCollectionSessions] = useState<CollectionSession[]>([]);
+  const [selectedStatSessionId, setSelectedStatSessionId] = useState("");
+  const [statEvents, setStatEvents] = useState<CollectionEvent[]>([]);
+  const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [isStatEventsLoading, setIsStatEventsLoading] = useState(false);
+  const [statsPeriodFilter, setStatsPeriodFilter] = useState<number | null>(null);
+  const [statsEventKindFilter, setStatsEventKindFilter] = useState<CollectionEvent["event_kind"] | "all">("all");
+  const [statsGoalMouthToggle, setStatsGoalMouthToggle] = useState<"our" | "against">("our");
+  const [seasonEvents, setSeasonEvents] = useState<CollectionEvent[]>([]);
+  const [isSeasonEventsLoading, setIsSeasonEventsLoading] = useState(false);
+  const [selectedSeasonPlayerId, setSelectedSeasonPlayerId] = useState("");
+  const [seasonPlayerDetailKindFilter, setSeasonPlayerDetailKindFilter] = useState<CollectionEvent["event_kind"] | "all">("all");
+  const [seasonPlayerGoalMouthToggle, setSeasonPlayerGoalMouthToggle] = useState<"our" | "against">("our");
 
   const [clubName, setClubName] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -760,6 +781,26 @@ function App() {
       .filter((row): row is { playerId: string; slot: (typeof collectionFormationSlots)[number] } => !!row);
   }, [collectionEventPlayers, collectionFormationSlots, collectionMatchPrepPlan]);
 
+  const collectionPitchPlayers = useMemo(() => {
+    if (!collectionMatchPrepPlan) return [] as Player[];
+    const onPitchIds = new Set(
+      collectionMatchPrepPlan.players
+        .filter((p) => p.in_matchday_squad && !!p.lineup_slot)
+        .map((p) => p.player_id),
+    );
+    return collectionEventPlayers.filter((p) => onPitchIds.has(p.id));
+  }, [collectionMatchPrepPlan, collectionEventPlayers]);
+
+  const collectionBenchPlayers = useMemo(() => {
+    if (!collectionMatchPrepPlan) return [] as Player[];
+    const benchIds = new Set(
+      collectionMatchPrepPlan.players
+        .filter((p) => p.in_matchday_squad && !p.lineup_slot)
+        .map((p) => p.player_id),
+    );
+    return collectionEventPlayers.filter((p) => benchIds.has(p.id));
+  }, [collectionMatchPrepPlan, collectionEventPlayers]);
+
   const dashboardStats = useMemo(
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
     [fixtures.length, players.length, teamMembers.length, teams.length],
@@ -927,6 +968,224 @@ function App() {
     return cells;
   }, [fixtureCalendarMonth]);
 
+  const selectedStatSession = useMemo(
+    () => allCollectionSessions.find((s) => s.id === selectedStatSessionId) ?? null,
+    [allCollectionSessions, selectedStatSessionId],
+  );
+
+  const statMatchSummary = useMemo(
+    () => ({
+      goalsFor: statEvents.filter((e) => e.event_kind === "shot" && e.shot_outcome === "goal").length,
+      goalsAgainst: statEvents.filter((e) => e.event_kind === "shot_against" && e.shot_outcome === "goal").length,
+      shotsFor: statEvents.filter((e) => e.event_kind === "shot").length,
+      shotsAgainst: statEvents.filter((e) => e.event_kind === "shot_against").length,
+      shotsOnTarget: statEvents.filter(
+        (e) => e.event_kind === "shot" && (e.shot_outcome === "save" || e.shot_outcome === "goal"),
+      ).length,
+      tackles: statEvents.filter((e) => e.event_kind === "tackle").length,
+      interceptions: statEvents.filter((e) => e.event_kind === "interception").length,
+    }),
+    [statEvents],
+  );
+
+  const statPeriodData = useMemo(() => {
+    if (!selectedStatSession) return [];
+    return Array.from({ length: selectedStatSession.total_periods }, (_, i) => i + 1).map((p) => ({
+      period: `P${p}`,
+      shots: statEvents.filter((e) => e.event_kind === "shot" && e.period_number === p).length,
+      shotsAgainst: statEvents.filter((e) => e.event_kind === "shot_against" && e.period_number === p).length,
+      tackles: statEvents.filter((e) => e.event_kind === "tackle" && e.period_number === p).length,
+      interceptions: statEvents.filter((e) => e.event_kind === "interception" && e.period_number === p).length,
+    }));
+  }, [statEvents, selectedStatSession]);
+
+  const statFilteredEvents = useMemo(
+    () =>
+      statEvents.filter((e) => {
+        const periodOk = statsPeriodFilter === null || e.period_number === statsPeriodFilter;
+        const kindOk = statsEventKindFilter === "all" || e.event_kind === statsEventKindFilter;
+        return periodOk && kindOk;
+      }),
+    [statEvents, statsPeriodFilter, statsEventKindFilter],
+  );
+
+  const statPlayerRows = useMemo(() => {
+    type PlayerStatRow = {
+      playerId: string;
+      displayName: string;
+      shirtNumber: number | null;
+      shots: number;
+      goals: number;
+      tackles: number;
+      interceptions: number;
+      saves: number;
+      conceded: number;
+    };
+    const map = new Map<string, PlayerStatRow>();
+    for (const e of statEvents) {
+      if (!e.player_id) continue;
+      if (!map.has(e.player_id)) {
+        const p = players.find((pl) => pl.id === e.player_id);
+        map.set(e.player_id, {
+          playerId: e.player_id,
+          displayName: p?.display_name ?? "Unknown",
+          shirtNumber: p?.shirt_number ?? null,
+          shots: 0,
+          goals: 0,
+          tackles: 0,
+          interceptions: 0,
+          saves: 0,
+          conceded: 0,
+        });
+      }
+      const row = map.get(e.player_id)!;
+      if (e.event_kind === "shot") {
+        row.shots += 1;
+        if (e.shot_outcome === "goal") row.goals += 1;
+      } else if (e.event_kind === "shot_against") {
+        if (e.shot_outcome === "save") row.saves += 1;
+        else if (e.shot_outcome === "goal") row.conceded += 1;
+      } else if (e.event_kind === "tackle") {
+        row.tackles += 1;
+      } else if (e.event_kind === "interception") {
+        row.interceptions += 1;
+      }
+    }
+    return [...map.values()].sort(
+      (a, b) => b.shots + b.goals + b.saves + b.tackles + b.interceptions - (a.shots + a.goals + a.saves + a.tackles + a.interceptions),
+    );
+  }, [statEvents, players]);
+
+  const statGoalDimensions = useMemo(
+    () => getGoalDimensions(selectedStatSession?.format as MatchFormat | undefined),
+    [selectedStatSession],
+  );
+
+  const statShotPoints = useMemo(
+    () => statEvents.filter((e) => e.event_kind === "shot" && e.goal_mouth_y !== null && e.goal_mouth_z !== null),
+    [statEvents],
+  );
+  const statOppShotPoints = useMemo(
+    () =>
+      statEvents.filter((e) => e.event_kind === "shot_against" && e.goal_mouth_y !== null && e.goal_mouth_z !== null),
+    [statEvents],
+  );
+
+  const seasonPlayerRows = useMemo(() => {
+    type SeasonPlayerRow = {
+      playerId: string;
+      displayName: string;
+      shirtNumber: number | null;
+      matches: number;
+      shots: number;
+      goals: number;
+      tackles: number;
+      interceptions: number;
+      saves: number;
+      conceded: number;
+    };
+    const sessionsByPlayer = new Map<string, Set<string>>();
+    const map = new Map<string, SeasonPlayerRow>();
+    for (const e of seasonEvents) {
+      if (!e.player_id) continue;
+      if (!map.has(e.player_id)) {
+        const p = players.find((pl) => pl.id === e.player_id);
+        map.set(e.player_id, {
+          playerId: e.player_id,
+          displayName: p?.display_name ?? "Unknown",
+          shirtNumber: p?.shirt_number ?? null,
+          matches: 0,
+          shots: 0,
+          goals: 0,
+          tackles: 0,
+          interceptions: 0,
+          saves: 0,
+          conceded: 0,
+        });
+        sessionsByPlayer.set(e.player_id, new Set());
+      }
+      sessionsByPlayer.get(e.player_id)!.add(e.session_id);
+      const row = map.get(e.player_id)!;
+      if (e.event_kind === "shot") {
+        row.shots += 1;
+        if (e.shot_outcome === "goal") row.goals += 1;
+      } else if (e.event_kind === "shot_against") {
+        if (e.shot_outcome === "save") row.saves += 1;
+        else if (e.shot_outcome === "goal") row.conceded += 1;
+      } else if (e.event_kind === "tackle") {
+        row.tackles += 1;
+      } else if (e.event_kind === "interception") {
+        row.interceptions += 1;
+      }
+    }
+    for (const [playerId, sessions] of sessionsByPlayer) {
+      const row = map.get(playerId);
+      if (row) row.matches = sessions.size;
+    }
+    return [...map.values()].sort(
+      (a, b) => b.goals + b.shots + b.saves + b.tackles + b.interceptions - (a.goals + a.shots + a.saves + a.tackles + a.interceptions),
+    );
+  }, [seasonEvents, players]);
+
+  const selectedSeasonPlayerEvents = useMemo(
+    () => seasonEvents.filter((e) => e.player_id === selectedSeasonPlayerId),
+    [seasonEvents, selectedSeasonPlayerId],
+  );
+
+  const selectedSeasonPlayerFilteredEvents = useMemo(
+    () =>
+      seasonPlayerDetailKindFilter === "all"
+        ? selectedSeasonPlayerEvents
+        : selectedSeasonPlayerEvents.filter((e) => e.event_kind === seasonPlayerDetailKindFilter),
+    [selectedSeasonPlayerEvents, seasonPlayerDetailKindFilter],
+  );
+
+  const selectedSeasonPlayerMatchRows = useMemo(() => {
+    const bySession = new Map<string, CollectionEvent[]>();
+    for (const e of selectedSeasonPlayerEvents) {
+      if (!bySession.has(e.session_id)) bySession.set(e.session_id, []);
+      bySession.get(e.session_id)!.push(e);
+    }
+    return [...bySession.entries()]
+      .map(([sessionId, evts]) => {
+        const sess = allCollectionSessions.find((s) => s.id === sessionId);
+        return {
+          sessionId,
+          fixtureLabel: sess?.fixture_label ?? "Unknown match",
+          kickoffAt: sess?.kickoff_at ?? null,
+          shots: evts.filter((e) => e.event_kind === "shot").length,
+          goals: evts.filter((e) => e.event_kind === "shot" && e.shot_outcome === "goal").length,
+          saves: evts.filter((e) => e.event_kind === "shot_against" && e.shot_outcome === "save").length,
+          conceded: evts.filter((e) => e.event_kind === "shot_against" && e.shot_outcome === "goal").length,
+          tackles: evts.filter((e) => e.event_kind === "tackle").length,
+          interceptions: evts.filter((e) => e.event_kind === "interception").length,
+        };
+      })
+      .sort((a, b) => (b.kickoffAt ?? "").localeCompare(a.kickoffAt ?? ""));
+  }, [selectedSeasonPlayerEvents, allCollectionSessions]);
+
+  const selectedSeasonPlayerShotPoints = useMemo(
+    () =>
+      selectedSeasonPlayerEvents.filter(
+        (e) => e.event_kind === "shot" && e.goal_mouth_y !== null && e.goal_mouth_z !== null,
+      ),
+    [selectedSeasonPlayerEvents],
+  );
+
+  const selectedSeasonPlayerOppShotPoints = useMemo(
+    () =>
+      selectedSeasonPlayerEvents.filter(
+        (e) => e.event_kind === "shot_against" && e.goal_mouth_y !== null && e.goal_mouth_z !== null,
+      ),
+    [selectedSeasonPlayerEvents],
+  );
+
+  const selectedSeasonPlayerGoalDimensions = useMemo(() => {
+    if (!selectedSeasonPlayerMatchRows.length) return null;
+    const sess = allCollectionSessions.find((s) => s.id === selectedSeasonPlayerMatchRows[0].sessionId);
+    return getGoalDimensions(sess?.format as MatchFormat | undefined);
+  }, [selectedSeasonPlayerMatchRows, allCollectionSessions]);
+
   const loadWorkspaceData = useCallback(async (preferredTeamId = "") => {
     setIsWorkspaceLoading(true);
     try {
@@ -1040,6 +1299,33 @@ function App() {
     }
     const rows = await listCollectionEvents(sessionId, teamId);
     setCollectionEvents(rows);
+  }, []);
+
+  const loadAllCollectionSessionsForTeam = useCallback(async (teamId: string) => {
+    setIsStatsLoading(true);
+    try {
+      setAllCollectionSessions(await listAllCollectionSessions(teamId));
+    } catch {
+      setAllCollectionSessions([]);
+    } finally {
+      setIsStatsLoading(false);
+    }
+  }, []);
+
+  const loadSeasonEvents = useCallback(async (sessions: CollectionSession[], teamId: string) => {
+    if (!sessions.length || !teamId) {
+      setSeasonEvents([]);
+      return;
+    }
+    setIsSeasonEventsLoading(true);
+    try {
+      const results = await Promise.all(sessions.map((s) => listCollectionEvents(s.id, teamId)));
+      setSeasonEvents(results.flat());
+    } catch {
+      setSeasonEvents([]);
+    } finally {
+      setIsSeasonEventsLoading(false);
+    }
   }, []);
 
   const loadAdminData = useCallback(async () => {
@@ -1163,6 +1449,30 @@ function App() {
     }
     void loadCollectionEvents(selectedCollectionSessionId, selectedTeamId);
   }, [loadCollectionEvents, selectedCollectionSessionId, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!user || section !== "stats" || !selectedTeamId) return;
+    void loadAllCollectionSessionsForTeam(selectedTeamId);
+  }, [loadAllCollectionSessionsForTeam, section, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!user || section !== "stats" || !selectedStatSessionId || !selectedTeamId) {
+      setStatEvents([]);
+      return;
+    }
+    setIsStatEventsLoading(true);
+    void listCollectionEvents(selectedStatSessionId, selectedTeamId)
+      .then(setStatEvents)
+      .catch(() => setStatEvents([]))
+      .finally(() => setIsStatEventsLoading(false));
+  }, [section, selectedStatSessionId, selectedTeamId, user]);
+
+  useEffect(() => {
+    if (!user || section !== "stats" || statsTopView !== "season" || !selectedTeamId || !allCollectionSessions.length) {
+      return;
+    }
+    void loadSeasonEvents(allCollectionSessions, selectedTeamId);
+  }, [loadSeasonEvents, section, statsTopView, allCollectionSessions, selectedTeamId, user]);
 
   useEffect(() => {
     if (!user || !selectedTeamId || !selectedCollectionSession?.match_id) {
@@ -1410,6 +1720,27 @@ function App() {
     }
   };
 
+  const handleConfirmSubstitution = () => {
+    if (!subPlayerOutId || !subPlayerInId || !collectionMatchPrepPlan) return;
+    const outPlayer = collectionMatchPrepPlan.players.find((p) => p.player_id === subPlayerOutId);
+    const slotToTransfer = outPlayer?.lineup_slot;
+    if (!slotToTransfer) return;
+    setCollectionMatchPrepPlan((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        players: prev.players.map((p) => {
+          if (p.player_id === subPlayerOutId) return { ...p, lineup_slot: null };
+          if (p.player_id === subPlayerInId) return { ...p, lineup_slot: slotToTransfer };
+          return p;
+        }),
+      };
+    });
+    setIsSubComposerOpen(false);
+    setSubPlayerOutId("");
+    setSubPlayerInId("");
+  };
+
   const getCollectionPitchPoint = (
     event: { clientX: number; clientY: number; currentTarget: HTMLDivElement },
   ): { xPct: number; yPct: number; isOutside: boolean } | null => {
@@ -1510,7 +1841,7 @@ function App() {
     try {
       const created = await createCollectionEvent(selectedCollectionSessionId, {
         team_id: selectedTeamId,
-        event_kind: "shot",
+        event_kind: eventComposerType,
         player_id: eventComposerPlayerId,
         x_pct: pendingEventPitchPoint.xPct,
         y_pct: pendingEventPitchPoint.yPct,
@@ -2774,6 +3105,12 @@ function App() {
                 resetCoachingNoteComposer();
                 resetFixtureForm();
                 resetPlayerComposer();
+                setStatsTopView("matches");
+                setStatsView("list");
+                setSelectedStatSessionId("");
+                setStatEvents([]);
+                setSeasonEvents([]);
+                setSelectedSeasonPlayerId("");
               }}
               options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
               placeholder="Select team"
@@ -2983,6 +3320,46 @@ function App() {
                             />
                           </div>
                         ))}
+                        {collectionMatchPrepPlan ? (
+                          <div className="collection-squad-overlay">
+                            <p className="collection-squad-section">On Pitch</p>
+                            {collectionPitchPlayers.map((p) => (
+                              <div key={p.id} className="collection-squad-player">
+                                {p.shirt_number != null ? (
+                                  <span className="collection-squad-num">{p.shirt_number}</span>
+                                ) : null}
+                                <span className="collection-squad-name">{p.display_name}</span>
+                              </div>
+                            ))}
+                            {collectionBenchPlayers.length > 0 ? (
+                              <>
+                                <p className="collection-squad-section" style={{ marginTop: "0.5rem" }}>
+                                  Bench
+                                </p>
+                                {collectionBenchPlayers.map((p) => (
+                                  <div key={p.id} className="collection-squad-player">
+                                    {p.shirt_number != null ? (
+                                      <span className="collection-squad-num">{p.shirt_number}</span>
+                                    ) : null}
+                                    <span className="collection-squad-name">{p.display_name}</span>
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  className="collection-sub-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSubPlayerOutId("");
+                                    setSubPlayerInId("");
+                                    setIsSubComposerOpen(true);
+                                  }}
+                                >
+                                  Sub
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </PitchDiagram>
                       <div className="collection-pitch-overlay">
                         <strong>
@@ -3022,6 +3399,74 @@ function App() {
                 ) : (
                   <p className="muted">No active session selected.</p>
                 )}
+              </div>
+            ) : null}
+            {isSubComposerOpen ? (
+              <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+                <div className="fixture-composer event-composer">
+                  <h3>Substitution</h3>
+                  <div className="event-composer-body">
+                    <div className="event-player-panel">
+                      <p className="muted" style={{ fontSize: "0.75rem", marginBottom: "0.3rem" }}>Player Off</p>
+                      <div className="event-player-grid">
+                        {collectionPitchPlayers.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`event-player-tile ${subPlayerOutId === p.id ? "selected" : ""}`}
+                            title={p.display_name}
+                            onClick={() => setSubPlayerOutId(p.id)}
+                          >
+                            <strong>{p.shirt_number != null ? `#${p.shirt_number}` : "?"}</strong>
+                          </button>
+                        ))}
+                      </div>
+                      {subPlayerOutId ? (
+                        <p className="muted" style={{ fontSize: "0.72rem" }}>
+                          {collectionPitchPlayers.find((p) => p.id === subPlayerOutId)?.display_name}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="event-player-panel">
+                      <p className="muted" style={{ fontSize: "0.75rem", marginBottom: "0.3rem" }}>Player On</p>
+                      <div className="event-player-grid">
+                        {collectionBenchPlayers.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`event-player-tile ${subPlayerInId === p.id ? "selected" : ""}`}
+                            title={p.display_name}
+                            onClick={() => setSubPlayerInId(p.id)}
+                          >
+                            <strong>{p.shirt_number != null ? `#${p.shirt_number}` : "?"}</strong>
+                          </button>
+                        ))}
+                      </div>
+                      {subPlayerInId ? (
+                        <p className="muted" style={{ fontSize: "0.72rem" }}>
+                          {collectionBenchPlayers.find((p) => p.id === subPlayerInId)?.display_name}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={!subPlayerOutId || !subPlayerInId}
+                      onClick={handleConfirmSubstitution}
+                    >
+                      Confirm Sub
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() => setIsSubComposerOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : null}
             {isEventComposerOpen ? (
@@ -4255,6 +4700,786 @@ function App() {
                 );
               })}
             </div>
+          </section>
+        ) : null}
+
+        {section === "stats" ? (
+          <section className="section-card">
+            {!selectedTeamId ? (
+              <p className="muted">Select a team to view match stats.</p>
+            ) : (
+              <>
+                <div className="admin-subnav" style={{ marginBottom: "1rem" }}>
+                  <button
+                    type="button"
+                    className={`admin-subnav-item ${statsTopView === "matches" ? "active" : ""}`}
+                    onClick={() => {
+                      setStatsTopView("matches");
+                      setStatsView("list");
+                    }}
+                  >
+                    Matches
+                  </button>
+                  <button
+                    type="button"
+                    className={`admin-subnav-item ${statsTopView === "season" ? "active" : ""}`}
+                    onClick={() => setStatsTopView("season")}
+                  >
+                    Season
+                  </button>
+                </div>
+
+                {statsTopView === "matches" ? (
+                  statsView === "list" ? (
+                    <div className="stack-form">
+                      {isStatsLoading ? <p className="muted">Loading sessions…</p> : null}
+                      {!isStatsLoading && allCollectionSessions.length === 0 ? (
+                        <p className="muted">No collection sessions recorded for this team.</p>
+                      ) : null}
+                      {allCollectionSessions.map((session) => (
+                        <div
+                          key={session.id}
+                          className="list-row stats-session-row"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            setSelectedStatSessionId(session.id);
+                            setStatsView("detail");
+                            setStatsPeriodFilter(null);
+                            setStatsEventKindFilter("all");
+                            setStatsGoalMouthToggle("our");
+                          }}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Enter" || ev.key === " ") {
+                              setSelectedStatSessionId(session.id);
+                              setStatsView("detail");
+                              setStatsPeriodFilter(null);
+                              setStatsEventKindFilter("all");
+                              setStatsGoalMouthToggle("our");
+                            }
+                          }}
+                        >
+                          <div>
+                            <strong>{session.fixture_label}</strong>
+                            {session.kickoff_at ? (
+                              <span className="muted">
+                                {" · "}
+                                {new Date(session.kickoff_at).toLocaleDateString(undefined, {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })}
+                              </span>
+                            ) : null}
+                            <span className="muted"> · {fixtureFormatIcon(session.format)}</span>
+                          </div>
+                          <span className={`fixture-chip ${session.state === "live" ? "scheduled" : "final"}`}>
+                            {session.state === "live" ? "Live" : "Final"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : selectedStatSession ? (
+                    <div className="stats-detail-panels">
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={() => setStatsView("list")}
+                      >
+                        ← Back to matches
+                      </button>
+
+                      <div className="section-card stats-score-header">
+                        <h3>{selectedStatSession.fixture_label}</h3>
+                        <div className="stats-score-row">
+                          <span className="stats-score-number">{statMatchSummary.goalsFor}</span>
+                          <span className="stats-score-sep">–</span>
+                          <span className="stats-score-number">{statMatchSummary.goalsAgainst}</span>
+                        </div>
+                        <p className="muted">
+                          {selectedStatSession.kickoff_at
+                            ? new Date(selectedStatSession.kickoff_at).toLocaleDateString(undefined, {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : "Date unknown"}
+                          {" · "}
+                          {fixtureFormatIcon(selectedStatSession.format)}
+                          {" · "}
+                          {selectedStatSession.total_periods === 4
+                            ? "Quarters"
+                            : selectedStatSession.total_periods === 2
+                              ? "Halves"
+                              : "Non-stop"}
+                        </p>
+                      </div>
+
+                      {isStatEventsLoading ? <p className="muted">Loading match events…</p> : null}
+
+                      {!isStatEventsLoading ? (
+                        <>
+                          <div className="section-card">
+                            <h3>Shot Map</h3>
+                            <div className="stats-filter-bar">
+                              <span className="muted">Period:</span>
+                              <button
+                                type="button"
+                                className={`button ${statsPeriodFilter === null ? "primary" : "secondary"}`}
+                                onClick={() => setStatsPeriodFilter(null)}
+                              >
+                                All
+                              </button>
+                              {Array.from({ length: selectedStatSession.total_periods }, (_, i) => i + 1).map((p) => (
+                                <button
+                                  key={p}
+                                  type="button"
+                                  className={`button ${statsPeriodFilter === p ? "primary" : "secondary"}`}
+                                  onClick={() => setStatsPeriodFilter(p)}
+                                >
+                                  P{p}
+                                </button>
+                              ))}
+                              <span className="muted" style={{ marginLeft: "0.5rem" }}>Type:</span>
+                              {(["all", "shot", "shot_against", "tackle", "interception"] as const).map((kind) => (
+                                <button
+                                  key={kind}
+                                  type="button"
+                                  className={`button ${statsEventKindFilter === kind ? "primary" : "secondary"}`}
+                                  onClick={() => setStatsEventKindFilter(kind)}
+                                >
+                                  {kind === "all"
+                                    ? "All"
+                                    : kind === "shot_against"
+                                      ? "Opp. Shot"
+                                      : kind[0].toUpperCase() + kind.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="stats-pitch-wrap">
+                              <PitchDiagram format={selectedStatSession.format}>
+                                {statFilteredEvents.map((ev) => (
+                                  <span
+                                    key={ev.id}
+                                    className={`collection-event-marker ${ev.event_kind}`}
+                                    style={{
+                                      left: `${100 - ev.y_pct}%`,
+                                      top: `${100 - ev.x_pct}%`,
+                                    }}
+                                    title={`${ev.event_kind} · ${ev.shot_outcome ?? "recorded"} · P${ev.period_number} ${formatClock(ev.period_second)}`}
+                                  />
+                                ))}
+                              </PitchDiagram>
+                            </div>
+                            <div className="stats-map-legend">
+                              <span className="stats-map-legend-item">
+                                <span className="collection-event-marker shot stats-map-legend-dot" />Shot
+                              </span>
+                              <span className="stats-map-legend-item">
+                                <span className="collection-event-marker shot_against stats-map-legend-dot" />Opp. Shot
+                              </span>
+                              <span className="stats-map-legend-item">
+                                <span className="collection-event-marker tackle stats-map-legend-dot" />Tackle
+                              </span>
+                              <span className="stats-map-legend-item">
+                                <span className="collection-event-marker interception stats-map-legend-dot" />Interception
+                              </span>
+                            </div>
+                          </div>
+
+                          {statShotPoints.length > 0 || statOppShotPoints.length > 0 ? (
+                            <div className="section-card">
+                              <h3>Goal Mouth</h3>
+                              <div className="stats-filter-bar">
+                                <button
+                                  type="button"
+                                  className={`button ${statsGoalMouthToggle === "our" ? "primary" : "secondary"}`}
+                                  onClick={() => setStatsGoalMouthToggle("our")}
+                                >
+                                  Our Shots ({statShotPoints.length})
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`button ${statsGoalMouthToggle === "against" ? "primary" : "secondary"}`}
+                                  onClick={() => setStatsGoalMouthToggle("against")}
+                                >
+                                  Opposition Shots ({statOppShotPoints.length})
+                                </button>
+                              </div>
+                              <div className="stats-goalmouths-wrap">
+                                <GoalMouthDiagram
+                                  disabled={true}
+                                  value={null}
+                                  onChange={() => {}}
+                                  goalWidthFt={statGoalDimensions?.width_ft}
+                                  pitchWidthM={statGoalDimensions?.pitch_width_m}
+                                  goalHeightFt={statGoalDimensions?.height_ft}
+                                  viewPaddingTopFt={6}
+                                  viewPaddingBottomFt={1.5}
+                                />
+                                <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                                  {(statsGoalMouthToggle === "our" ? statShotPoints : statOppShotPoints).map((ev) => {
+                                    const view = buildGoalViewWindow(
+                                      statGoalDimensions?.width_ft ?? 24,
+                                      statGoalDimensions?.pitch_width_m ?? 64,
+                                      statGoalDimensions?.height_ft ?? 8,
+                                      6,
+                                      1.5,
+                                    );
+                                    const markerStyle = toMarkerStyle(
+                                      { y: ev.goal_mouth_y!, z: ev.goal_mouth_z! },
+                                      view,
+                                      FRAME.top + FRAME.height,
+                                    );
+                                    return (
+                                      <span
+                                        key={ev.id}
+                                        className={`stats-goalmouths-marker ${ev.shot_outcome ?? "miss"}`}
+                                        style={markerStyle}
+                                        title={`${ev.shot_outcome ?? "miss"} · P${ev.period_number} ${formatClock(ev.period_second)}`}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="stats-map-legend" style={{ marginTop: "0.5rem" }}>
+                                <span className="stats-map-legend-item">
+                                  <span className="stats-goalmouths-marker goal stats-map-legend-dot" />Goal
+                                </span>
+                                <span className="stats-map-legend-item">
+                                  <span className="stats-goalmouths-marker save stats-map-legend-dot" />Save
+                                </span>
+                                <span className="stats-map-legend-item">
+                                  <span className="stats-goalmouths-marker post stats-map-legend-dot" />Post
+                                </span>
+                                <span className="stats-map-legend-item">
+                                  <span className="stats-goalmouths-marker miss stats-map-legend-dot" />Miss
+                                </span>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          <div className="section-card">
+                            <div className="stats-grid">
+                              <article>
+                                <h3>Shots For</h3>
+                                <p>{statMatchSummary.shotsFor}</p>
+                              </article>
+                              <article>
+                                <h3>Shots Against</h3>
+                                <p>{statMatchSummary.shotsAgainst}</p>
+                              </article>
+                              <article>
+                                <h3>On Target</h3>
+                                <p>{statMatchSummary.shotsOnTarget}</p>
+                              </article>
+                              <article>
+                                <h3>Tackles</h3>
+                                <p>{statMatchSummary.tackles}</p>
+                              </article>
+                              <article>
+                                <h3>Interceptions</h3>
+                                <p>{statMatchSummary.interceptions}</p>
+                              </article>
+                            </div>
+                          </div>
+
+                          {statPeriodData.length > 1 ? (
+                            <div className="section-card">
+                              <h3>Period Breakdown</h3>
+                              <ResponsiveContainer width="100%" height={220}>
+                                <BarChart data={statPeriodData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#2b4257" />
+                                  <XAxis dataKey="period" tick={{ fill: "#9ab0c4", fontSize: 11 }} />
+                                  <YAxis tick={{ fill: "#9ab0c4", fontSize: 11 }} allowDecimals={false} />
+                                  <Tooltip
+                                    contentStyle={{
+                                      background: "#131d27",
+                                      border: "1px solid #2b4257",
+                                      borderRadius: "0.5rem",
+                                      color: "#e7edf2",
+                                    }}
+                                  />
+                                  <Legend wrapperStyle={{ fontSize: "0.75rem", color: "#9ab0c4" }} />
+                                  <Bar dataKey="shots" name="Shots For" fill="#f45050" radius={[3, 3, 0, 0]} />
+                                  <Bar dataKey="shotsAgainst" name="Shots Against" fill="#ff8c00" radius={[3, 3, 0, 0]} />
+                                  <Bar dataKey="tackles" name="Tackles" fill="#50acf4" radius={[3, 3, 0, 0]} />
+                                  <Bar dataKey="interceptions" name="Interceptions" fill="#ffcc5c" radius={[3, 3, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          ) : null}
+
+                          {statPlayerRows.length > 0 ? (
+                            <div className="section-card">
+                              <h3>Player Breakdown</h3>
+                              <table className="stats-player-table">
+                                <thead>
+                                  <tr>
+                                    <th>Player</th>
+                                    <th>Shots</th>
+                                    <th>Goals</th>
+                                    <th>Saves</th>
+                                    <th>Conceded</th>
+                                    <th>Tackles</th>
+                                    <th>Int.</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {statPlayerRows.map((row) => (
+                                    <tr key={row.playerId}>
+                                      <td>
+                                        {row.shirtNumber ? <span className="muted">#{row.shirtNumber} </span> : null}
+                                        {row.displayName}
+                                      </td>
+                                      <td>{row.shots}</td>
+                                      <td>
+                                        {row.goals > 0 ? (
+                                          <strong style={{ color: "var(--tl-accent)" }}>{row.goals}</strong>
+                                        ) : (
+                                          0
+                                        )}
+                                      </td>
+                                      <td>
+                                        {row.saves > 0 ? (
+                                          <strong style={{ color: "#50acf4" }}>{row.saves}</strong>
+                                        ) : (
+                                          row.saves
+                                        )}
+                                      </td>
+                                      <td>
+                                        {row.conceded > 0 ? (
+                                          <strong style={{ color: "#ff8c00" }}>{row.conceded}</strong>
+                                        ) : (
+                                          row.conceded
+                                        )}
+                                      </td>
+                                      <td>{row.tackles}</td>
+                                      <td>{row.interceptions}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null
+                ) : null}
+
+                {statsTopView === "season" ? (
+                  <div className="stack-form">
+                    {isSeasonEventsLoading ? <p className="muted">Loading season data…</p> : null}
+                    {!isSeasonEventsLoading && allCollectionSessions.length === 0 ? (
+                      <p className="muted">No collection sessions recorded for this team.</p>
+                    ) : null}
+                    {!isSeasonEventsLoading && allCollectionSessions.length > 0 ? (
+                      selectedSeasonPlayerId ? (
+                        <>
+                          <button
+                            type="button"
+                            className="button secondary"
+                            onClick={() => setSelectedSeasonPlayerId("")}
+                          >
+                            ← Season Overview
+                          </button>
+                          {(() => {
+                            const row = seasonPlayerRows.find((r) => r.playerId === selectedSeasonPlayerId);
+                            const p = players.find((pl) => pl.id === selectedSeasonPlayerId);
+                            return (
+                              <>
+                                <div className="section-card">
+                                  <div style={{ marginBottom: "1rem" }}>
+                                    <h2 style={{ margin: 0 }}>
+                                      {p?.shirt_number ? (
+                                        <span className="muted" style={{ fontSize: "1rem" }}>
+                                          #{p.shirt_number}{" "}
+                                        </span>
+                                      ) : null}
+                                      {p?.display_name ?? "Player"}
+                                    </h2>
+                                    <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                                      Season profile · {row?.matches ?? 0}{" "}
+                                      {(row?.matches ?? 0) === 1 ? "match" : "matches"}
+                                    </p>
+                                  </div>
+                                  {row ? (
+                                    <div className="stats-grid">
+                                      <article>
+                                        <h3>Shots</h3>
+                                        <p>{row.shots}</p>
+                                      </article>
+                                      <article>
+                                        <h3>Goals</h3>
+                                        <p style={row.goals > 0 ? { color: "var(--tl-accent)" } : {}}>
+                                          {row.goals}
+                                        </p>
+                                      </article>
+                                      {row.saves > 0 || row.conceded > 0 ? (
+                                        <>
+                                          <article>
+                                            <h3>Saves</h3>
+                                            <p style={row.saves > 0 ? { color: "#50acf4" } : {}}>
+                                              {row.saves}
+                                            </p>
+                                          </article>
+                                          <article>
+                                            <h3>Conceded</h3>
+                                            <p style={row.conceded > 0 ? { color: "#ff8c00" } : {}}>
+                                              {row.conceded}
+                                            </p>
+                                          </article>
+                                        </>
+                                      ) : null}
+                                      <article>
+                                        <h3>Tackles</h3>
+                                        <p>{row.tackles}</p>
+                                      </article>
+                                      <article>
+                                        <h3>Interceptions</h3>
+                                        <p>{row.interceptions}</p>
+                                      </article>
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                <div className="section-card">
+                                  <h3>Action Map</h3>
+                                  <div className="stats-filter-bar" style={{ marginBottom: "0.5rem" }}>
+                                    {(
+                                      [
+                                        "all",
+                                        "shot",
+                                        "shot_against",
+                                        "tackle",
+                                        "interception",
+                                      ] as const
+                                    ).map((kind) => (
+                                      <button
+                                        key={kind}
+                                        type="button"
+                                        className={`button ${seasonPlayerDetailKindFilter === kind ? "primary" : "secondary"}`}
+                                        onClick={() => setSeasonPlayerDetailKindFilter(kind)}
+                                      >
+                                        {kind === "all"
+                                          ? "All"
+                                          : kind === "shot"
+                                            ? "Shots"
+                                            : kind === "shot_against"
+                                              ? "Opp. Shots"
+                                              : kind === "tackle"
+                                                ? "Tackles"
+                                                : "Interceptions"}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div className="stats-pitch-wrap">
+                                    <PitchDiagram format={allCollectionSessions[0]?.format}>
+                                      {selectedSeasonPlayerFilteredEvents.map((ev) => (
+                                        <span
+                                          key={ev.id}
+                                          className={`collection-event-marker ${ev.event_kind}`}
+                                          style={{
+                                            left: `${100 - ev.y_pct}%`,
+                                            top: `${100 - ev.x_pct}%`,
+                                          }}
+                                          title={ev.event_kind}
+                                        />
+                                      ))}
+                                    </PitchDiagram>
+                                  </div>
+                                  <div className="stats-map-legend">
+                                    <span className="stats-map-legend-item">
+                                      <span className="collection-event-marker shot stats-map-legend-dot" />
+                                      Shot
+                                    </span>
+                                    <span className="stats-map-legend-item">
+                                      <span className="collection-event-marker shot_against stats-map-legend-dot" />
+                                      Opp. Shot
+                                    </span>
+                                    <span className="stats-map-legend-item">
+                                      <span className="collection-event-marker tackle stats-map-legend-dot" />
+                                      Tackle
+                                    </span>
+                                    <span className="stats-map-legend-item">
+                                      <span className="collection-event-marker interception stats-map-legend-dot" />
+                                      Interception
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {selectedSeasonPlayerShotPoints.length > 0 ||
+                                selectedSeasonPlayerOppShotPoints.length > 0 ? (
+                                  <div className="section-card">
+                                    <h3>Goal Mouth</h3>
+                                    <div className="stats-filter-bar" style={{ marginBottom: "0.75rem" }}>
+                                      <button
+                                        type="button"
+                                        className={`button ${seasonPlayerGoalMouthToggle === "our" ? "primary" : "secondary"}`}
+                                        onClick={() => setSeasonPlayerGoalMouthToggle("our")}
+                                      >
+                                        Shots Taken ({selectedSeasonPlayerShotPoints.length})
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`button ${seasonPlayerGoalMouthToggle === "against" ? "primary" : "secondary"}`}
+                                        onClick={() => setSeasonPlayerGoalMouthToggle("against")}
+                                      >
+                                        Shots Faced ({selectedSeasonPlayerOppShotPoints.length})
+                                      </button>
+                                    </div>
+                                    <div className="stats-goalmouths-wrap">
+                                      <GoalMouthDiagram
+                                        value={null}
+                                        onChange={() => {}}
+                                        disabled={true}
+                                        goalWidthFt={selectedSeasonPlayerGoalDimensions?.width_ft}
+                                        pitchWidthM={selectedSeasonPlayerGoalDimensions?.pitch_width_m}
+                                        goalHeightFt={selectedSeasonPlayerGoalDimensions?.height_ft}
+                                      />
+                                      <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                                        {(seasonPlayerGoalMouthToggle === "our"
+                                          ? selectedSeasonPlayerShotPoints
+                                          : selectedSeasonPlayerOppShotPoints
+                                        ).map((e) => {
+                                          const view = buildGoalViewWindow(
+                                            selectedSeasonPlayerGoalDimensions?.width_ft ?? 24,
+                                            selectedSeasonPlayerGoalDimensions?.pitch_width_m ?? 64,
+                                            selectedSeasonPlayerGoalDimensions?.height_ft ?? 8,
+                                            6,
+                                            2,
+                                          );
+                                          const markerStyle = toMarkerStyle(
+                                            { y: e.goal_mouth_y!, z: e.goal_mouth_z! },
+                                            view,
+                                            90,
+                                          );
+                                          return (
+                                            <span
+                                              key={e.id}
+                                              className={`stats-goalmouths-marker ${e.shot_outcome ?? "miss"}`}
+                                              style={markerStyle}
+                                              title={e.shot_outcome ?? "miss"}
+                                            />
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                    <div className="stats-map-legend" style={{ marginTop: "0.5rem" }}>
+                                      <span className="stats-map-legend-item">
+                                        <span
+                                          className="stats-goalmouths-marker goal"
+                                          style={{ position: "relative", display: "inline-block" }}
+                                        />
+                                        Goal
+                                      </span>
+                                      <span className="stats-map-legend-item">
+                                        <span
+                                          className="stats-goalmouths-marker save"
+                                          style={{ position: "relative", display: "inline-block" }}
+                                        />
+                                        Save
+                                      </span>
+                                      <span className="stats-map-legend-item">
+                                        <span
+                                          className="stats-goalmouths-marker miss"
+                                          style={{ position: "relative", display: "inline-block" }}
+                                        />
+                                        Miss
+                                      </span>
+                                      <span className="stats-map-legend-item">
+                                        <span
+                                          className="stats-goalmouths-marker post"
+                                          style={{ position: "relative", display: "inline-block" }}
+                                        />
+                                        Post
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {selectedSeasonPlayerMatchRows.length > 0 ? (
+                                  <div className="section-card">
+                                    <h3>Match by Match</h3>
+                                    <table className="stats-player-table">
+                                      <thead>
+                                        <tr>
+                                          <th>Match</th>
+                                          <th>Shots</th>
+                                          <th>Goals</th>
+                                          <th>Saves</th>
+                                          <th>Conceded</th>
+                                          <th>Tackles</th>
+                                          <th>Int.</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {selectedSeasonPlayerMatchRows.map((mr) => (
+                                          <tr key={mr.sessionId}>
+                                            <td>{mr.fixtureLabel}</td>
+                                            <td>{mr.shots}</td>
+                                            <td>
+                                              {mr.goals > 0 ? (
+                                                <strong style={{ color: "var(--tl-accent)" }}>
+                                                  {mr.goals}
+                                                </strong>
+                                              ) : (
+                                                0
+                                              )}
+                                            </td>
+                                            <td>
+                                              {mr.saves > 0 ? (
+                                                <strong style={{ color: "#50acf4" }}>{mr.saves}</strong>
+                                              ) : (
+                                                mr.saves
+                                              )}
+                                            </td>
+                                            <td>
+                                              {mr.conceded > 0 ? (
+                                                <strong style={{ color: "#ff8c00" }}>{mr.conceded}</strong>
+                                              ) : (
+                                                mr.conceded
+                                              )}
+                                            </td>
+                                            <td>{mr.tackles}</td>
+                                            <td>{mr.interceptions}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <>
+                          <div className="section-card">
+                            <div className="stats-grid">
+                              <article>
+                                <h3>Matches</h3>
+                                <p>{allCollectionSessions.length}</p>
+                              </article>
+                              <article>
+                                <h3>Goals For</h3>
+                                <p>
+                                  {
+                                    seasonEvents.filter(
+                                      (e) => e.event_kind === "shot" && e.shot_outcome === "goal",
+                                    ).length
+                                  }
+                                </p>
+                              </article>
+                              <article>
+                                <h3>Goals Against</h3>
+                                <p>
+                                  {
+                                    seasonEvents.filter(
+                                      (e) =>
+                                        e.event_kind === "shot_against" && e.shot_outcome === "goal",
+                                    ).length
+                                  }
+                                </p>
+                              </article>
+                              <article>
+                                <h3>Total Shots</h3>
+                                <p>
+                                  {seasonEvents.filter((e) => e.event_kind === "shot").length}
+                                </p>
+                              </article>
+                              <article>
+                                <h3>Tackles</h3>
+                                <p>
+                                  {seasonEvents.filter((e) => e.event_kind === "tackle").length}
+                                </p>
+                              </article>
+                            </div>
+                          </div>
+
+                          {seasonPlayerRows.length > 0 ? (
+                            <div className="section-card">
+                              <h3>Player Stats</h3>
+                              <p
+                                className="muted"
+                                style={{ marginBottom: "0.5rem", fontSize: "0.8rem" }}
+                              >
+                                Tap a player to view their detailed season profile.
+                              </p>
+                              <table className="stats-player-table">
+                                <thead>
+                                  <tr>
+                                    <th>Player</th>
+                                    <th>Games</th>
+                                    <th>Shots</th>
+                                    <th>Goals</th>
+                                    <th>Saves</th>
+                                    <th>Conceded</th>
+                                    <th>Tackles</th>
+                                    <th>Int.</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {seasonPlayerRows.map((row) => (
+                                    <tr
+                                      key={row.playerId}
+                                      className="stats-session-row"
+                                      onClick={() => {
+                                        setSelectedSeasonPlayerId(row.playerId);
+                                        setSeasonPlayerDetailKindFilter("all");
+                                        setSeasonPlayerGoalMouthToggle("our");
+                                      }}
+                                    >
+                                      <td>
+                                        {row.shirtNumber ? (
+                                          <span className="muted">#{row.shirtNumber} </span>
+                                        ) : null}
+                                        {row.displayName}
+                                      </td>
+                                      <td>{row.matches}</td>
+                                      <td>{row.shots}</td>
+                                      <td>
+                                        {row.goals > 0 ? (
+                                          <strong style={{ color: "var(--tl-accent)" }}>
+                                            {row.goals}
+                                          </strong>
+                                        ) : (
+                                          0
+                                        )}
+                                      </td>
+                                      <td>
+                                        {row.saves > 0 ? (
+                                          <strong style={{ color: "#50acf4" }}>{row.saves}</strong>
+                                        ) : (
+                                          row.saves
+                                        )}
+                                      </td>
+                                      <td>
+                                        {row.conceded > 0 ? (
+                                          <strong style={{ color: "#ff8c00" }}>{row.conceded}</strong>
+                                        ) : (
+                                          row.conceded
+                                        )}
+                                      </td>
+                                      <td>{row.tackles}</td>
+                                      <td>{row.interceptions}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="muted">No player-attributed events recorded yet.</p>
+                          )}
+                        </>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
           </section>
         ) : null}
 

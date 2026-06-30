@@ -13,7 +13,7 @@ type GoalMouthDiagramProps = {
   viewPaddingBottomFt?: number;
 };
 
-const FRAME = {
+export const FRAME = {
   left: 15,
   top: 8,
   width: 70,
@@ -35,11 +35,11 @@ type GoalViewWindow = {
   viewTopZ: number;
 };
 
-function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function buildGoalViewWindow(
+export function buildGoalViewWindow(
   goalWidthFt: number,
   pitchWidthM: number,
   goalHeightFt: number,
@@ -97,7 +97,7 @@ function toGoalPoint(
   };
 }
 
-function toMarkerStyle(
+export function toMarkerStyle(
   point: { y: number; z: number },
   view: GoalViewWindow,
   groundLinePct: number,

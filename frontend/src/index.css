@@ -535,6 +535,67 @@ textarea {
   color: var(--tl-muted);
 }
 
+.collection-squad-overlay {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 0.4rem 0.5rem;
+}
+
+.collection-squad-section {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tl-muted);
+  margin: 0 0 0.3rem;
+}
+
+.collection-squad-player {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  margin-bottom: 0.2rem;
+  min-width: 0;
+}
+
+.collection-squad-num {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--tl-accent);
+  flex-shrink: 0;
+  min-width: 1.2rem;
+  text-align: right;
+}
+
+.collection-squad-name {
+  font-size: 0.62rem;
+  color: var(--tl-silver);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.collection-sub-btn {
+  pointer-events: auto;
+  margin-top: 0.45rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--tl-silver);
+  cursor: pointer;
+  line-height: 1;
+}
+
 .collection-event-marker {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -1431,4 +1492,164 @@ textarea {
   .calendar-cell {
     min-height: 84px;
   }
+}
+
+/* ── Stats section ─────────────────────────────────────────── */
+.stats-session-row {
+  cursor: pointer;
+  border-radius: 0.35rem;
+  transition: background 0.12s ease;
+}
+
+.stats-session-row:hover {
+  background: rgba(133, 241, 63, 0.06);
+}
+
+.stats-detail-panels {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.stats-score-header {
+  text-align: center;
+}
+
+.stats-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 0.5rem 0;
+}
+
+.stats-score-number {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--tl-accent);
+  line-height: 1;
+}
+
+.stats-score-sep {
+  font-size: 2rem;
+  color: var(--tl-muted);
+  font-weight: 300;
+}
+
+.stats-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.stats-filter-bar .button {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.stats-pitch-wrap {
+  border: 1px solid var(--tl-border);
+  border-radius: 0.8rem;
+  background: rgba(21, 34, 46, 0.92);
+  padding: 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stats-pitch-wrap .pitch-surface {
+  width: min(100%, 340px);
+  cursor: default;
+}
+
+.stats-goalmouths-wrap {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  max-width: 440px;
+}
+
+.stats-goalmouths-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+
+.stats-goalmouths-marker.goal {
+  background: rgba(133, 241, 63, 0.92);
+  box-shadow: 0 0 0 3px rgba(133, 241, 63, 0.25);
+}
+
+.stats-goalmouths-marker.save {
+  background: rgba(80, 172, 244, 0.92);
+  box-shadow: 0 0 0 3px rgba(80, 172, 244, 0.2);
+}
+
+.stats-goalmouths-marker.miss {
+  background: rgba(180, 180, 180, 0.55);
+}
+
+.stats-goalmouths-marker.post {
+  background: rgba(255, 204, 92, 0.92);
+  box-shadow: 0 0 0 3px rgba(255, 204, 92, 0.2);
+}
+
+.stats-player-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.stats-player-table th,
+.stats-player-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--tl-border);
+}
+
+.stats-player-table th {
+  color: var(--tl-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stats-player-table td:not(:first-child),
+.stats-player-table th:not(:first-child) {
+  text-align: center;
+}
+
+.stats-player-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.stats-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--tl-muted);
+}
+
+.stats-map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.stats-map-legend-dot {
+  position: relative !important;
+  flex-shrink: 0;
+  transform: none !important;
+}
+
+.stats-map-legend-dot.shot_against {
+  transform: rotate(45deg) !important;
 }

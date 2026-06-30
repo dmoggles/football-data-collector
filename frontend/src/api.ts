@@ -248,6 +248,13 @@ export async function listActiveCollectionSessions(teamId: string): Promise<Coll
   );
 }
 
+export async function listAllCollectionSessions(teamId: string): Promise<CollectionSession[]> {
+  return request<CollectionSession[]>(
+    `/collection-sessions?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
 export async function startCollectionSession(payload: {
   match_id: string;
   team_id: string;

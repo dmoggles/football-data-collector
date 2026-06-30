@@ -177,6 +177,25 @@ def build_collection_event_response(row: Event, session_id: str) -> CollectionEv
     )
 
 
+@router.get("", response_model=list[CollectionSessionResponse])
+def list_collection_sessions(
+    team_id: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CollectionSessionResponse]:
+    ensure_team_member(db, team_id, user.id)
+    rows = db.scalars(
+        select(CollectionSession)
+        .where(CollectionSession.team_id == team_id)
+        .order_by(CollectionSession.created_at.desc())
+    ).all()
+    results: list[CollectionSessionResponse] = []
+    for row in rows:
+        match = get_match_or_404(db, row.match_id)
+        results.append(build_collection_session_response(db, row, match, team_id))
+    return results
+
+
 @router.get("/active", response_model=list[CollectionSessionResponse])
 def list_active_collection_sessions(
     team_id: str = Query(...),
