@@ -6,6 +6,9 @@ import "./index.css";
 import { GoalMouthDiagram, buildGoalViewWindow, toMarkerStyle, FRAME } from "./components/GoalMouthDiagram";
 import { PitchDiagram } from "./components/PitchDiagram";
 import { SearchableSelect } from "./components/SearchableSelect";
+import { SettingsView } from "./views/SettingsView";
+import { PlayersView } from "./views/PlayersView";
+import { MembersView } from "./views/MembersView";
 import { getGoalDimensions, getGoalWidthSpanPct } from "./domain/goalDimensions";
 import { predictLikelyPlayerId } from "./domain/eventPredictions";
 import type { LineupPlayerPosition } from "./domain/eventPredictions";
@@ -40,10 +43,8 @@ import {
   isPositionMismatch,
 } from "./utils/formatters";
 import {
-  addTeamMember,
   assignAdminTeamOwner,
   assignUserGlobalRole,
-  changePassword,
   createCollectionEvent,
   createCoachingNote,
   createFixture,
@@ -53,11 +54,8 @@ import {
   deleteAdminClub,
   deleteAdminTeam,
   deleteFixture,
-  createPlayer,
   createTeam,
-  deletePlayer,
   deleteTeam,
-  deleteTeamMember,
   getAdminOverview,
   getAdminAuditLogs,
   getCollectionSession,
@@ -86,10 +84,8 @@ import {
   uploadClubLogo,
   updateFixture,
   upsertMatchPrepPlan,
-  updatePlayer,
   updateAdminTeam,
   updateAdminClub,
-  updateTeamMember,
 } from "./api";
 import type {
   AdminAuditLogEntry,
@@ -171,9 +167,6 @@ function App() {
 
   const [clubName, setClubName] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [playerName, setPlayerName] = useState("");
-  const [shirtNumber, setShirtNumber] = useState("");
-  const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [fixtureOpponentTeamId, setFixtureOpponentTeamId] = useState("");
   const [fixtureFormat, setFixtureFormat] = useState<MatchFormat>("11_aside");
@@ -185,16 +178,10 @@ function App() {
   const [fixtureStatus, setFixtureStatus] = useState("scheduled");
   const [editingFixtureId, setEditingFixtureId] = useState("");
   const [isFixtureComposerOpen, setIsFixtureComposerOpen] = useState(false);
-  const [isPlayerComposerOpen, setIsPlayerComposerOpen] = useState(false);
-  const [editingPlayerId, setEditingPlayerId] = useState("");
   const [fixtureCalendarMonth, setFixtureCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
-  const [newPasswordInput, setNewPasswordInput] = useState("");
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
-
   const [selectedFixtureForMatchPrep, setSelectedFixtureForMatchPrep] = useState("");
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
@@ -203,8 +190,6 @@ function App() {
   const [coachingNoteText, setCoachingNoteText] = useState("");
   const [matchPrepSegmentMinuteDrafts, setMatchPrepSegmentMinuteDrafts] = useState<Record<number, string>>({});
 
-  const [newMemberEmail, setNewMemberEmail] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState<TeamRole>("data_enterer");
   const [adminClubName, setAdminClubName] = useState("");
   const [adminEditingClubId, setAdminEditingClubId] = useState("");
   const [adminEditingClubName, setAdminEditingClubName] = useState("");
@@ -219,11 +204,9 @@ function App() {
   const [clubLogoUploadClubId, setClubLogoUploadClubId] = useState("");
 
   const [error, setError] = useState<string | null>(null);
-  const [membersLoadError, setMembersLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
-  const [isMembersLoading, setIsMembersLoading] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const adminAssignEmailInputRef = useRef<HTMLInputElement | null>(null);
@@ -1438,14 +1421,6 @@ function App() {
     return mode === "login" ? "Log In" : "Create Account";
   }, [isSubmitting, mode]);
 
-  const togglePosition = (positionCode: string) => {
-    setSelectedPositions((current) =>
-      current.includes(positionCode)
-        ? current.filter((item) => item !== positionCode)
-        : [...current, positionCode],
-    );
-  };
-
   const handleStartCollectionSession = async () => {
     if (!selectedTeamId || !selectedCollectionFixtureId) {
       return;
@@ -2105,6 +2080,22 @@ function App() {
     }
   };
 
+  const handleSessionReset = () => {
+    setUser(null);
+    setEmail("");
+    setPassword("");
+    setTeams([]);
+    setFixtures([]);
+    setPlayers([]);
+    setTeamMembers([]);
+    setAdminOverview(null);
+    setAdminAuditLogs([]);
+    setIsSuperAdmin(false);
+    setAdminSection("home");
+    setSection("dashboard");
+    setMode("login");
+  };
+
   const handleLogout = async () => {
     setError(null);
     setIsSubmitting(true);
@@ -2345,200 +2336,6 @@ function App() {
       setFixtureKickoffTime("");
     }
     setIsFixtureComposerOpen(true);
-  };
-
-  const handleCreatePlayer = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedTeamId) {
-      setError("Select a team first");
-      return;
-    }
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const parsedShirtNumber = shirtNumber.trim() ? Number(shirtNumber) : null;
-      if (editingPlayerId) {
-        const updated = await updatePlayer(editingPlayerId, {
-          display_name: playerName.trim(),
-          shirt_number: parsedShirtNumber,
-          position: selectedPositions.length > 0 ? selectedPositions.join(", ") : null,
-        });
-        setPlayers((existing) =>
-          existing
-            .map((player) => (player.id === editingPlayerId ? updated : player))
-            .sort((a, b) => a.display_name.localeCompare(b.display_name)),
-        );
-      } else {
-        const created = await createPlayer({
-          team_id: selectedTeamId,
-          display_name: playerName.trim(),
-          shirt_number: parsedShirtNumber,
-          position: selectedPositions.length > 0 ? selectedPositions.join(", ") : null,
-        });
-        setPlayers((existing) =>
-          [...existing, created].sort((a, b) => a.display_name.localeCompare(b.display_name)),
-        );
-      }
-      resetPlayerComposer();
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to create player");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const resetPlayerComposer = () => {
-    setEditingPlayerId("");
-    setPlayerName("");
-    setShirtNumber("");
-    setSelectedPositions([]);
-    setIsPlayerComposerOpen(false);
-  };
-
-  const startPlayerEdit = (player: Player) => {
-    setEditingPlayerId(player.id);
-    setPlayerName(player.display_name);
-    setShirtNumber(player.shirt_number ? String(player.shirt_number) : "");
-    const parsedPositions = player.position
-      ? player.position.split(",").map((item) => item.trim()).filter(Boolean)
-      : [];
-    setSelectedPositions(parsedPositions);
-    setIsPlayerComposerOpen(true);
-  };
-
-  const handleDeletePlayer = async (playerId: string) => {
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      await deletePlayer(playerId);
-      setPlayers((existing) => existing.filter((player) => player.id !== playerId));
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to delete player");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAddTeamMember = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedTeamId) {
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      await addTeamMember(selectedTeamId, {
-        user_email: newMemberEmail.trim().toLowerCase(),
-        role: newMemberRole,
-      });
-      setNewMemberEmail("");
-      setNewMemberRole("data_enterer");
-      await loadTeamMembers(selectedTeamId);
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to add member");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleMemberRoleChange = async (membershipId: string, role: TeamRole) => {
-    if (!selectedTeamId) {
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      await updateTeamMember(selectedTeamId, membershipId, { role });
-      await loadTeamMembers(selectedTeamId);
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to update member role");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteTeamMember = async (membershipId: string) => {
-    if (!selectedTeamId) {
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      await deleteTeamMember(selectedTeamId, membershipId);
-      await loadTeamMembers(selectedTeamId);
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Failed to remove member");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (newPasswordInput !== confirmPasswordInput) {
-      setError("New password and confirmation do not match");
-      return;
-    }
-
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      await changePassword({
-        current_password: currentPasswordInput,
-        new_password: newPasswordInput,
-      });
-      setUser(null);
-      setEmail("");
-      setPassword("");
-      setCurrentPasswordInput("");
-      setNewPasswordInput("");
-      setConfirmPasswordInput("");
-      setTeams([]);
-      setPlayers([]);
-      setTeamMembers([]);
-      setAdminOverview(null);
-      setAdminAuditLogs([]);
-      setIsSuperAdmin(false);
-      setAdminSection("home");
-      setSection("dashboard");
-      setMode("login");
-    } catch (requestError) {
-      if (requestError instanceof Error) {
-        setError(requestError.message);
-      } else {
-        setError("Unable to change password");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   const handleCreateAdminClub = async (event: FormEvent<HTMLFormElement>) => {
@@ -2930,7 +2727,6 @@ function App() {
                 setCoachingNotes([]);
                 resetCoachingNoteComposer();
                 resetFixtureForm();
-                resetPlayerComposer();
                 setStatsTopView("matches");
                 setStatsView("list");
                 setSelectedStatSessionId("");
@@ -3493,41 +3289,7 @@ function App() {
         ) : null}
 
         {section === "settings" ? (
-          <section className="section-card">
-            <div className="stack-form">
-              <h3>Account Security</h3>
-              <form className="stack-form" onSubmit={handleChangePassword}>
-                <input
-                  type="password"
-                  placeholder="Current password"
-                  value={currentPasswordInput}
-                  onChange={(event) => setCurrentPasswordInput(event.target.value)}
-                  minLength={8}
-                  required
-                />
-                <input
-                  type="password"
-                  placeholder="New password"
-                  value={newPasswordInput}
-                  onChange={(event) => setNewPasswordInput(event.target.value)}
-                  minLength={8}
-                  required
-                />
-                <input
-                  type="password"
-                  placeholder="Confirm new password"
-                  value={confirmPasswordInput}
-                  onChange={(event) => setConfirmPasswordInput(event.target.value)}
-                  minLength={8}
-                  required
-                />
-                <button className="button secondary" type="submit" disabled={isSubmitting}>
-                  Change Password
-                </button>
-                <p className="muted">You will be logged out after password change.</p>
-              </form>
-            </div>
-          </section>
+          <SettingsView onLoggedOut={handleSessionReset} />
         ) : null}
 
         {section === "fixtures" ? (
@@ -4360,187 +4122,24 @@ function App() {
         ) : null}
 
         {section === "players" ? (
-          <section className="section-card">
-            <div className="player-toolbar match-prep-toolbar">
-              <button
-                className="button primary"
-                type="button"
-                disabled={
-                  isSubmitting || teams.length === 0 || !selectedTeamId || !selectedTeamCanManage
-                }
-                onClick={() => setIsPlayerComposerOpen(true)}
-              >
-                + Add Player
-              </button>
-            </div>
-            {!selectedTeamId ? <p className="muted">Select a team to view players.</p> : null}
-            {!selectedTeamCanManage && selectedTeamId ? (
-              <p className="muted">Manager access required to add players.</p>
-            ) : null}
-
-            <div>
-              <h3>Players {selectedTeamName ? `- ${selectedTeamName}` : ""}</h3>
-              {selectedTeamId && playersForSelectedTeam.length === 0 ? <p className="muted">No players yet.</p> : null}
-              {playersForSelectedTeam.map((player) => (
-                <div className="list-row" key={player.id}>
-                  <span>
-                    {player.display_name}
-                    {player.shirt_number ? ` #${player.shirt_number}` : ""}
-                    {player.position ? ` (${player.position})` : ""}
-                  </span>
-                  <div className="member-actions">
-                    <button
-                      className="button secondary"
-                      onClick={() => startPlayerEdit(player)}
-                      type="button"
-                      disabled={
-                        isSubmitting ||
-                        (() => {
-                          const role = roleByTeamId[player.team_id];
-                          return role !== undefined && !isTeamAdminRole(role);
-                        })()
-                      }
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="button secondary"
-                      onClick={() => handleDeletePlayer(player.id)}
-                      type="button"
-                      disabled={
-                        isSubmitting ||
-                        (() => {
-                          const role = roleByTeamId[player.team_id];
-                          return role !== undefined && !isTeamAdminRole(role);
-                        })()
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {isPlayerComposerOpen ? (
-              <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
-                <form className="fixture-composer" onSubmit={handleCreatePlayer}>
-                  <h3>{editingPlayerId ? "Edit Player" : "Add Player"}</h3>
-                  <p className="muted">{selectedTeamName}</p>
-                  <input
-                    placeholder="Player name"
-                    value={playerName}
-                    onChange={(event) => setPlayerName(event.target.value)}
-                    required
-                  />
-                  <input
-                    placeholder="Shirt number"
-                    value={shirtNumber}
-                    onChange={(event) => setShirtNumber(event.target.value)}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                  />
-
-                  <div className="position-grid">
-                    {POSITION_OPTIONS.map((positionCode) => (
-                      <label className="position-option" key={positionCode}>
-                        <input
-                          checked={selectedPositions.includes(positionCode)}
-                          onChange={() => togglePosition(positionCode)}
-                          type="checkbox"
-                        />
-                        <span>{positionCode}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="member-actions">
-                    <button className="button primary" disabled={isSubmitting || !selectedTeamId} type="submit">
-                      {editingPlayerId ? "Save Player" : "Add Player"}
-                    </button>
-                    <button className="button secondary" type="button" disabled={isSubmitting} onClick={resetPlayerComposer}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            ) : null}
-          </section>
+          <PlayersView
+            selectedTeamId={selectedTeamId}
+            selectedTeamName={selectedTeamName}
+            playersForSelectedTeam={playersForSelectedTeam}
+            selectedTeamCanManage={selectedTeamCanManage}
+            onPlayersChanged={() => void loadWorkspaceData(selectedTeamId)}
+          />
         ) : null}
 
         {section === "members" ? (
-          <section className="section-card two-col">
-            <form className="stack-form" onSubmit={handleAddTeamMember}>
-              <h3>Manage Members</h3>
-              {!selectedTeamId ? <p className="muted">Select a team in the sidebar first.</p> : null}
-              <input
-                placeholder="user@email.com"
-                type="email"
-                value={newMemberEmail}
-                onChange={(event) => setNewMemberEmail(event.target.value)}
-                required
-              />
-              <SearchableSelect
-                value={newMemberRole}
-                onChange={(nextValue) => setNewMemberRole(nextValue as TeamRole)}
-                options={TEAM_MEMBER_ROLE_OPTIONS}
-                placeholder="Select role"
-              />
-              <button
-                className="button primary"
-                disabled={isSubmitting || !selectedTeamId || !selectedTeamCanManage}
-                type="submit"
-              >
-                Add Member
-              </button>
-              {!selectedTeamCanManage && selectedTeamId ? (
-                <p className="muted">Manager access required to manage members.</p>
-              ) : null}
-            </form>
-
-            <div>
-              <h3>Members {selectedTeamName ? `- ${selectedTeamName}` : ""}</h3>
-              {isMembersLoading ? <p className="muted">Loading members...</p> : null}
-              {membersLoadError ? <p className="muted">{membersLoadError}</p> : null}
-              {!isMembersLoading && !membersLoadError && teamMembers.length === 0 ? (
-                <p className="muted">No members assigned.</p>
-              ) : null}
-
-              {teamMembers.map((membership) => {
-                const isCurrentUser = membership.user_id === user.id;
-                const emailOrId = membership.user_email ?? membership.user_id;
-                const userName = emailOrId.includes("@")
-                  ? emailOrId.split("@")[0].replace(/[._-]+/g, " ")
-                  : emailOrId;
-
-                return (
-                  <div className="member-row" key={membership.id}>
-                    <span className="muted">
-                      {userName} ({emailOrId})
-                      {isCurrentUser ? " - You" : ""}
-                    </span>
-                    <div className="member-actions">
-                      <SearchableSelect
-                        value={membership.role}
-                        onChange={(nextValue) => handleMemberRoleChange(membership.id, nextValue as TeamRole)}
-                        options={TEAM_MEMBER_ROLE_OPTIONS}
-                        placeholder="Select role"
-                        disabled={isSubmitting || !selectedTeamCanManage}
-                      />
-                      <button
-                        className="button secondary"
-                        onClick={() => handleDeleteTeamMember(membership.id)}
-                        type="button"
-                        disabled={isSubmitting || isCurrentUser || !selectedTeamCanManage}
-                        title={isCurrentUser ? "You cannot remove your own membership" : "Remove member"}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <MembersView
+            user={user}
+            selectedTeamId={selectedTeamId}
+            selectedTeamName={selectedTeamName}
+            teamMembers={teamMembers}
+            selectedTeamCanManage={selectedTeamCanManage}
+            onMembersChanged={() => void loadTeamMembers(selectedTeamId)}
+          />
         ) : null}
 
         {section === "stats" ? (
