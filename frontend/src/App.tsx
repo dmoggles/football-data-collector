@@ -7,6 +7,7 @@ import { GoalMouthDiagram, buildGoalViewWindow, toMarkerStyle, FRAME } from "./c
 import { PitchDiagram } from "./components/PitchDiagram";
 import { getGoalDimensions, getGoalWidthSpanPct } from "./domain/goalDimensions";
 import { predictLikelyPlayerId } from "./domain/eventPredictions";
+import type { LineupPlayerPosition } from "./domain/eventPredictions";
 import { getFormationSlots } from "./domain/formations";
 import type { FormationSlot } from "./domain/formations";
 import {
@@ -768,20 +769,31 @@ function App() {
         : [],
     [collectionMatchPrepPlan],
   );
-  const collectionLineupCandidates = useMemo(() => {
-    if (!collectionMatchPrepPlan || collectionFormationSlots.length === 0) {
-      return [] as Array<{ playerId: string; slot: (typeof collectionFormationSlots)[number] }>;
+  const collectionCurrentLineupCandidates = useMemo((): LineupPlayerPosition[] => {
+    if (!collectionMatchPrepPlan || collectionFormationSlots.length === 0) return [];
+    const slotById = new Map(collectionFormationSlots.map((s) => [s.id, s]));
+    const slotIdByPlayerId = new Map<string, string>();
+    for (const p of collectionMatchPrepPlan.players) {
+      if (p.lineup_slot) slotIdByPlayerId.set(p.player_id, p.lineup_slot);
     }
-    const slotById = new Map(collectionFormationSlots.map((slot) => [slot.id, slot]));
-    const allowedPlayerIds = new Set(collectionEventPlayers.map((player) => player.id));
-    return collectionMatchPrepPlan.players
-      .filter((player) => player.in_matchday_squad && !!player.lineup_slot && allowedPlayerIds.has(player.player_id))
-      .map((player) => {
-        const slot = slotById.get(player.lineup_slot ?? "");
-        return slot ? { playerId: player.player_id, slot } : null;
+    const subEvents = collectionEvents
+      .filter((e) => e.event_kind === "sub")
+      .sort((a, b) => a.period_number - b.period_number || a.period_second - b.period_second);
+    for (const sub of subEvents) {
+      if (!sub.player_id || !sub.player_in_id) continue;
+      const slotId = slotIdByPlayerId.get(sub.player_id);
+      if (slotId) {
+        slotIdByPlayerId.delete(sub.player_id);
+        slotIdByPlayerId.set(sub.player_in_id, slotId);
+      }
+    }
+    return [...slotIdByPlayerId.entries()]
+      .map(([playerId, slotId]) => {
+        const slot = slotById.get(slotId);
+        return slot ? { playerId, slot } : null;
       })
-      .filter((row): row is { playerId: string; slot: (typeof collectionFormationSlots)[number] } => !!row);
-  }, [collectionEventPlayers, collectionFormationSlots, collectionMatchPrepPlan]);
+      .filter((c): c is LineupPlayerPosition => !!c);
+  }, [collectionMatchPrepPlan, collectionFormationSlots, collectionEvents]);
 
   const collectionCurrentLineup = useMemo(() => {
     if (!collectionMatchPrepPlan) return { pitchPlayers: [] as Player[], benchPlayers: [] as Player[], slotByPlayerId: new Map<string, string>() };
@@ -1881,14 +1893,14 @@ function App() {
       eventKind,
       xPct,
       yPct,
-      lineup: collectionLineupCandidates,
+      lineup: collectionCurrentLineupCandidates,
     });
     return predictedPlayerId ?? "";
   };
 
   const predictGoalkeeperPlayerId = (): string => {
-    const gk = collectionLineupCandidates.find((c) => c.slot.role === "GK");
-    return gk?.playerId ?? collectionLineupCandidates[0]?.playerId ?? "";
+    const gk = collectionCurrentLineupCandidates.find((c) => c.slot.role === "GK");
+    return gk?.playerId ?? collectionCurrentLineupCandidates[0]?.playerId ?? "";
   };
 
   const handleCollectionPitchClick = async (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -3613,7 +3625,7 @@ function App() {
                           eventKind: "shot",
                           xPct: pendingEventPitchPoint.xPct,
                           yPct: pendingEventPitchPoint.yPct,
-                          lineup: collectionLineupCandidates,
+                          lineup: collectionCurrentLineupCandidates,
                         });
                         setEventComposerPlayerId(predictedPlayerId ?? "");
                       }}
@@ -3643,7 +3655,7 @@ function App() {
                           eventKind: "tackle",
                           xPct: pendingEventPitchPoint.xPct,
                           yPct: pendingEventPitchPoint.yPct,
-                          lineup: collectionLineupCandidates,
+                          lineup: collectionCurrentLineupCandidates,
                         });
                         setEventComposerPlayerId(predictedPlayerId ?? "");
                       }}
@@ -3662,7 +3674,7 @@ function App() {
                           eventKind: "interception",
                           xPct: pendingEventPitchPoint.xPct,
                           yPct: pendingEventPitchPoint.yPct,
-                          lineup: collectionLineupCandidates,
+                          lineup: collectionCurrentLineupCandidates,
                         });
                         setEventComposerPlayerId(predictedPlayerId ?? "");
                       }}
