@@ -5,11 +5,40 @@ import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Responsive
 import "./index.css";
 import { GoalMouthDiagram, buildGoalViewWindow, toMarkerStyle, FRAME } from "./components/GoalMouthDiagram";
 import { PitchDiagram } from "./components/PitchDiagram";
+import { SearchableSelect } from "./components/SearchableSelect";
 import { getGoalDimensions, getGoalWidthSpanPct } from "./domain/goalDimensions";
 import { predictLikelyPlayerId } from "./domain/eventPredictions";
 import type { LineupPlayerPosition } from "./domain/eventPredictions";
 import { getFormationSlots } from "./domain/formations";
 import type { FormationSlot } from "./domain/formations";
+import {
+  type AuthMode,
+  type Section,
+  type AdminSection,
+  type FixtureVenue,
+  POSITION_OPTIONS,
+  BASE_NAV_ITEMS,
+  MATCH_FORMAT_OPTIONS,
+  MATCH_PERIOD_FORMAT_OPTIONS,
+  FIXTURE_STATUS_OPTIONS,
+  KICKOFF_TIME_OPTIONS,
+  TEAM_MEMBER_ROLE_OPTIONS,
+  CALENDAR_WEEKDAY_LABELS,
+  ADMIN_NAV_ITEM,
+  ADMIN_SUB_NAV_ITEMS,
+} from "./constants";
+import {
+  isTeamAdminRole,
+  fixtureStatusClass,
+  toLocalDateKey,
+  fixtureFormatIcon,
+  toQuarterHourTime,
+  formatClock,
+  buildCollectionSessionWsUrl,
+  timeToMinutes,
+  parsePlayerPositionCodes,
+  isPositionMismatch,
+} from "./utils/formatters";
 import {
   addTeamMember,
   assignAdminTeamOwner,
@@ -82,334 +111,6 @@ import type {
   User,
 } from "./types/auth";
 
-type AuthMode = "login" | "register";
-type Section = "dashboard" | "collection" | "fixtures" | "match_prep" | "players" | "teams" | "members" | "settings" | "stats" | "admin";
-type AdminSection = "home" | "clubs" | "teams" | "users" | "audit";
-type FixtureVenue = "home" | "away";
-
-const POSITION_OPTIONS = ["GK", "RB", "RWB", "CB", "LB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"];
-const BASE_NAV_ITEMS: Array<{ id: Exclude<Section, "admin">; label: string; shortLabel: string }> = [
-  { id: "dashboard", label: "Dashboard", shortLabel: "D" },
-  { id: "collection", label: "Match", shortLabel: "L" },
-  { id: "fixtures", label: "Fixtures", shortLabel: "F" },
-  { id: "match_prep", label: "Match Prep", shortLabel: "MP" },
-  { id: "players", label: "Players", shortLabel: "P" },
-  { id: "teams", label: "Teams", shortLabel: "T" },
-  { id: "members", label: "Members", shortLabel: "M" },
-  { id: "stats", label: "Stats", shortLabel: "St" },
-  { id: "settings", label: "Settings", shortLabel: "S" },
-];
-const MATCH_FORMAT_OPTIONS: Array<{ value: MatchFormat; label: string }> = [
-  { value: "5_aside", label: "5 Aside" },
-  { value: "7_aside", label: "7 Aside" },
-  { value: "9_aside", label: "9 Aside" },
-  { value: "11_aside", label: "11 Aside" },
-];
-const MATCH_PERIOD_FORMAT_OPTIONS: Array<{ value: MatchPeriodFormat; label: string }> = [
-  { value: "halves", label: "Halves" },
-  { value: "quarters", label: "Quarters" },
-  { value: "non_stop", label: "Non-stop" },
-];
-const FIXTURE_STATUS_OPTIONS = [
-  { value: "scheduled", label: "Scheduled" },
-  { value: "final", label: "Final" },
-  { value: "cancelled", label: "Cancelled" },
-];
-const KICKOFF_TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
-  const hours = String(Math.floor(index / 4)).padStart(2, "0");
-  const minutes = String((index % 4) * 15).padStart(2, "0");
-  const value = `${hours}:${minutes}`;
-  return { value, label: value };
-});
-const TEAM_MEMBER_ROLE_OPTIONS = [
-  { value: "manager", label: "Manager" },
-  { value: "data_enterer", label: "Data Enterer" },
-];
-const CALENDAR_WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const ADMIN_NAV_ITEM: { id: Section; label: string; shortLabel: string } = {
-  id: "admin",
-  label: "Super Admin",
-  shortLabel: "A",
-};
-const ADMIN_SUB_NAV_ITEMS: Array<{ id: AdminSection; label: string }> = [
-  { id: "home", label: "Overview" },
-  { id: "clubs", label: "Clubs" },
-  { id: "teams", label: "Teams" },
-  { id: "users", label: "Users" },
-  { id: "audit", label: "Audit" },
-];
-
-function isTeamAdminRole(role: TeamRole): boolean {
-  return role === "manager" || role === "team_admin" || role === "admin";
-}
-
-function fixtureStatusClass(status: string): string {
-  const normalized = status.trim().toLowerCase();
-  if (normalized === "final") {
-    return "fixture-chip final";
-  }
-  if (normalized === "cancelled") {
-    return "fixture-chip cancelled";
-  }
-  return "fixture-chip scheduled";
-}
-
-function toLocalDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function fixtureFormatIcon(format: MatchFormat): string {
-  if (format === "5_aside") {
-    return "⚽5";
-  }
-  if (format === "7_aside") {
-    return "⚽7";
-  }
-  if (format === "9_aside") {
-    return "⚽9";
-  }
-  return "⚽11";
-}
-
-function toQuarterHourTime(date: Date): string {
-  const rounded = new Date(date);
-  const minutes = rounded.getMinutes();
-  const roundedMinutes = Math.round(minutes / 15) * 15;
-  if (roundedMinutes === 60) {
-    rounded.setHours(rounded.getHours() + 1, 0, 0, 0);
-  } else {
-    rounded.setMinutes(roundedMinutes, 0, 0);
-  }
-  const hours = String(rounded.getHours()).padStart(2, "0");
-  const mins = String(rounded.getMinutes()).padStart(2, "0");
-  return `${hours}:${mins}`;
-}
-
-function formatClock(totalSeconds: number): string {
-  const safe = Math.max(0, totalSeconds);
-  const minutes = Math.floor(safe / 60);
-  const seconds = safe % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function buildCollectionSessionWsUrl(sessionId: string, teamId: string): string {
-  const apiBase = (import.meta.env.VITE_API_BASE_URL?.trim() ?? "").replace(/\/+$/, "");
-  let origin = apiBase || window.location.origin;
-  if (!apiBase) {
-    // In local dev, frontend runs on :5173 while backend websocket is on :8000.
-    origin = origin.replace(":5173", ":8000");
-  }
-  const wsBase = origin.replace(/^http/i, "ws");
-  return `${wsBase}/collection-sessions/${encodeURIComponent(sessionId)}/ws?team_id=${encodeURIComponent(teamId)}`;
-}
-
-function timeToMinutes(timeValue: string): number | null {
-  const [hoursText, minutesText] = timeValue.split(":");
-  const hours = Number(hoursText);
-  const minutes = Number(minutesText);
-  if (
-    Number.isNaN(hours) ||
-    Number.isNaN(minutes) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return null;
-  }
-  return hours * 60 + minutes;
-}
-
-function normalizeRoleCode(role: string): string {
-  return role.trim().toUpperCase();
-}
-
-function parsePlayerPositionCodes(position: string | null): string[] {
-  if (!position) {
-    return [];
-  }
-  return position
-    .split(/[,\|/]/)
-    .map((item) => normalizeRoleCode(item))
-    .filter(Boolean);
-}
-
-function isPositionMismatch(playerPosition: string | null, slotRole: string): boolean {
-  const playerRoles = parsePlayerPositionCodes(playerPosition);
-  if (playerRoles.length === 0) {
-    return false;
-  }
-
-  const normalizedSlotRole = normalizeRoleCode(slotRole);
-  if (playerRoles.includes(normalizedSlotRole)) {
-    return false;
-  }
-
-  const aliasGroups: string[][] = [
-    ["CB", "LCB", "RCB"],
-    ["ST", "CF"],
-    ["LM", "LW"],
-    ["RM", "RW"],
-    ["LB", "LWB"],
-    ["RB", "RWB"],
-  ];
-  for (const group of aliasGroups) {
-    if (group.includes(normalizedSlotRole) && playerRoles.some((role) => group.includes(role))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-type SearchableOption = {
-  value: string;
-  label: string;
-};
-
-type SearchableSelectProps = {
-  value: string;
-  options: SearchableOption[];
-  placeholder: string;
-  disabled?: boolean;
-  className?: string;
-  onChange: (nextValue: string) => void;
-};
-
-function SearchableSelect({
-  value,
-  options,
-  placeholder,
-  disabled = false,
-  className,
-  onChange,
-}: SearchableSelectProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const selected = options.find((option) => option.value === value);
-    setQuery(selected?.label ?? "");
-  }, [options, value]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const selectedOptionLabel = options.find((option) => option.value === value)?.label ?? "";
-  const normalizedQuery = query.trim().toLowerCase();
-  const shouldFilter = Boolean(
-    normalizedQuery && normalizedQuery !== selectedOptionLabel.trim().toLowerCase(),
-  );
-  const filteredOptions = shouldFilter
-    ? options.filter((option) => option.label.toLowerCase().includes(normalizedQuery))
-    : options;
-
-  const selectOption = useCallback(
-    (nextValue: string) => {
-      const selected = options.find((option) => option.value === nextValue);
-      onChange(nextValue);
-      setQuery(selected?.label ?? "");
-      setIsOpen(false);
-      setActiveIndex(-1);
-    },
-    [onChange, options],
-  );
-
-  return (
-    <div className={`searchable-select ${disabled ? "disabled" : ""} ${className ?? ""}`} ref={rootRef}>
-      <input
-        value={query}
-        onFocus={() => {
-          if (!disabled) {
-            setIsOpen(true);
-            setActiveIndex(0);
-          }
-        }}
-        onChange={(event) => {
-          const nextQuery = event.target.value;
-          setQuery(nextQuery);
-          setIsOpen(true);
-          setActiveIndex(0);
-          const exact = options.find((option) => option.label.toLowerCase() === nextQuery.trim().toLowerCase());
-          onChange(exact?.value ?? "");
-        }}
-        onKeyDown={(event) => {
-          if (disabled) {
-            return;
-          }
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            if (!isOpen) {
-              setIsOpen(true);
-              setActiveIndex(0);
-              return;
-            }
-            setActiveIndex((current) => Math.min(current + 1, filteredOptions.length - 1));
-            return;
-          }
-          if (event.key === "ArrowUp") {
-            event.preventDefault();
-            if (!isOpen) {
-              setIsOpen(true);
-              setActiveIndex(Math.max(filteredOptions.length - 1, 0));
-              return;
-            }
-            setActiveIndex((current) => Math.max(current - 1, 0));
-            return;
-          }
-          if (event.key === "Enter" && isOpen) {
-            event.preventDefault();
-            if (activeIndex >= 0 && filteredOptions[activeIndex]) {
-              selectOption(filteredOptions[activeIndex].value);
-            }
-            return;
-          }
-          if (event.key === "Escape") {
-            setIsOpen(false);
-            setActiveIndex(-1);
-            return;
-          }
-          if (event.key === "Tab") {
-            setIsOpen(false);
-            setActiveIndex(-1);
-          }
-        }}
-        placeholder={placeholder}
-        disabled={disabled}
-      />
-      {isOpen && !disabled ? (
-        <div className="searchable-select-menu">
-          {filteredOptions.length === 0 ? <p className="searchable-select-empty">No matches</p> : null}
-          {filteredOptions.map((option, index) => (
-            <button
-              className={`searchable-select-option ${
-                option.value === value || index === activeIndex ? "active" : ""
-              }`}
-              key={option.value}
-              type="button"
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => selectOption(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
