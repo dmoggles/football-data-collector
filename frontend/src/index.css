@@ -604,6 +604,47 @@ textarea {
   line-height: 1;
 }
 
+.planned-sub-notifications {
+  position: absolute;
+  bottom: 0.7rem;
+  right: 0.7rem;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 260px;
+  pointer-events: none;
+}
+
+.planned-sub-notification {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(255, 195, 50, 0.4);
+  border-radius: 0.6rem;
+  background: rgba(8, 18, 27, 0.72);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+
+.planned-sub-label {
+  font-size: 0.73rem;
+  color: var(--tl-silver);
+  line-height: 1.35;
+}
+
+.planned-sub-actions {
+  display: flex;
+  gap: 0.35rem;
+  pointer-events: auto;
+}
+
+.planned-sub-actions .button {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.6rem;
+}
+
 .collection-event-marker {
   position: absolute;
   transform: translate(-50%, -50%);

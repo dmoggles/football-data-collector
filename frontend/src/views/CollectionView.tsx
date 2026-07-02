@@ -15,7 +15,7 @@ import type { LineupPlayerPosition } from "../domain/eventPredictions";
 import { getFormationSlots } from "../domain/formations";
 import { getGoalDimensions, getGoalWidthSpanPct } from "../domain/goalDimensions";
 import { formatClock } from "../utils/formatters";
-import type { CollectionEvent, CollectionSession, MatchFormat, MatchPrepPlan, Player } from "../types/auth";
+import type { CollectionEvent, CollectionSession, MatchFormat, MatchPrepPlan, MatchPrepSubstitutionSwap, Player } from "../types/auth";
 
 type CollectionViewProps = {
   selectedTeamId: string;
@@ -48,6 +48,7 @@ export function CollectionView({
   const [isSubComposerOpen, setIsSubComposerOpen] = useState(false);
   const [subPlayerOutId, setSubPlayerOutId] = useState("");
   const [subPlayerInId, setSubPlayerInId] = useState("");
+  const [dismissedPlannedSubKeys, setDismissedPlannedSubKeys] = useState<Set<string>>(new Set());
   const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
   const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "shot_against">("shot");
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
@@ -175,6 +176,26 @@ export function CollectionView({
       slotByPlayerId,
     };
   }, [collectionMatchPrepPlan, collectionFormationSlots, collectionEvents, collectionEventPlayers]);
+
+  const upcomingPlannedSubs = useMemo(() => {
+    if (!collectionMatchPrepPlan || !collectionSessionLive) return [] as Array<{ swap: MatchPrepSubstitutionSwap; end_minute: number }>;
+    const currentMinute = Math.floor(collectionSessionLive.elapsed_seconds / 60);
+    const confirmedPlayerOutIds = new Set(
+      collectionEvents
+        .filter((e) => e.event_kind === "sub" && e.player_id)
+        .map((e) => e.player_id!),
+    );
+    const results: Array<{ swap: MatchPrepSubstitutionSwap; end_minute: number }> = [];
+    for (const segment of collectionMatchPrepPlan.substitution_segments) {
+      if (currentMinute < segment.end_minute - 1) continue;
+      for (const swap of segment.substitutions) {
+        if (confirmedPlayerOutIds.has(swap.player_out_id)) continue;
+        if (dismissedPlannedSubKeys.has(swap.player_out_id)) continue;
+        results.push({ swap, end_minute: segment.end_minute });
+      }
+    }
+    return results;
+  }, [collectionMatchPrepPlan, collectionSessionLive, collectionEvents, dismissedPlannedSubKeys]);
 
   const currentPeriodEvents = useMemo(
     () =>
@@ -325,6 +346,24 @@ export function CollectionView({
       setIsSubComposerOpen(false);
       setSubPlayerOutId("");
       setSubPlayerInId("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to record substitution");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConfirmPlannedSub = async (swap: MatchPrepSubstitutionSwap) => {
+    if (!selectedCollectionSessionId || !selectedTeamId) return;
+    setIsSubmitting(true);
+    try {
+      const created = await createCollectionEvent(selectedCollectionSessionId, {
+        team_id: selectedTeamId,
+        event_kind: "sub",
+        player_id: swap.player_out_id,
+        player_in_id: swap.player_in_id,
+      });
+      setCollectionEvents((prev) => [...prev, created]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to record substitution");
     } finally {
@@ -485,6 +524,40 @@ export function CollectionView({
                   <span className="collection-clock">{formatClock(collectionSessionLive.current_period_elapsed_seconds)}</span>
                   <small>{collectionSessionLive.fixture_label}</small>
                 </div>
+                {upcomingPlannedSubs.length > 0 ? (
+                  <div className="planned-sub-notifications">
+                    {upcomingPlannedSubs.map(({ swap, end_minute }) => (
+                      <div key={swap.player_out_id} className="planned-sub-notification">
+                        <span className="planned-sub-label">
+                          Sub min {end_minute}:{" "}
+                          {swap.player_out_shirt_number != null ? `#${swap.player_out_shirt_number} ` : ""}
+                          {swap.player_out_name} → {swap.player_in_name}
+                          {swap.player_in_shirt_number != null ? ` #${swap.player_in_shirt_number}` : ""}
+                        </span>
+                        <div className="planned-sub-actions">
+                          <button
+                            type="button"
+                            className="button primary"
+                            disabled={isSubmitting}
+                            onClick={(e) => { e.stopPropagation(); void handleConfirmPlannedSub(swap); }}
+                          >
+                            Confirm Sub
+                          </button>
+                          <button
+                            type="button"
+                            className="button secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDismissedPlannedSubKeys((prev) => new Set(prev).add(swap.player_out_id));
+                            }}
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div className="collection-actions">
                 {collectionSessionLive.can_end_period && selectedTeamCanManage ? (
