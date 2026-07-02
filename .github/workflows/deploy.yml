@@ -80,11 +80,13 @@ jobs:
       matrix:
         include:
           - service: backend
-            context: ./backend
-            image:   ghcr.io/dmoggles/tapline-backend
+            context:    ./backend
+            dockerfile: ./backend/Dockerfile
+            image:      ghcr.io/dmoggles/tapline-backend
           - service: frontend
-            context: ./frontend
-            image:   ghcr.io/dmoggles/tapline-frontend
+            context:    .
+            dockerfile: ./frontend/Dockerfile
+            image:      ghcr.io/dmoggles/tapline-frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +102,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context:    ${{ matrix.context }}
+          file:       ${{ matrix.dockerfile }}
           push:       true
           tags: |
             ${{ matrix.image }}:${{ github.event.release.tag_name }}
