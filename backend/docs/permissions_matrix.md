@@ -45,6 +45,14 @@ This document defines backend authorization expectations for current roles and s
 | Match Prep | `GET /match-prep/notes?match_id={match_id}&team_id={team_id}` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Match Prep | `POST /match-prep/notes` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Match Prep | `PUT /match-prep/plan` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Collection Sessions | `GET /collection-sessions/active?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Collection Sessions | `POST /collection-sessions/start` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Collection Sessions | `GET /collection-sessions/{session_id}?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Collection Sessions | `POST /collection-sessions/{session_id}/end-period` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Collection Sessions | `POST /collection-sessions/{session_id}/start-period` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Collection Sessions | `GET /collection-sessions/{session_id}/events?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Collection Sessions | `POST /collection-sessions/{session_id}/events` | ❌ | ❌ | ✅ (during running period; v1 supports `shot`, `tackle`, `interception`, `pass`; `x/y` 0-100, pass supports end coordinates, shots use `goal_mouth_y` 0-100 + `goal_mouth_z` 0-20ft) | ✅ | ✅ |
+| Collection Sessions | `WS /collection-sessions/{session_id}/ws?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Clubs | `POST /clubs/{club_id}/logo` | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Admin | `GET /admin/overview` | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Admin | `GET /admin/audit-logs` | ❌ | ❌ | ❌ | ❌ | ✅ |

@@ -5,6 +5,11 @@ import type { MatchFormat } from "../types/auth";
 type PitchDiagramProps = {
   format: MatchFormat;
   className?: string;
+  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerMove?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerUp?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerCancel?: (event: React.PointerEvent<HTMLDivElement>) => void;
   onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
   children?: ReactNode;
@@ -99,6 +104,11 @@ function arcPath(
 export function PitchDiagram({
   format,
   className = "",
+  onClick,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
   onDragOver,
   onDrop,
   children,
@@ -127,6 +137,11 @@ export function PitchDiagram({
     <div
       className={pitchClassName}
       style={{ aspectRatio: `${width} / ${length}` }}
+      onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >

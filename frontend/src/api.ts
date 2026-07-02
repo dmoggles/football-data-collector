@@ -2,6 +2,8 @@ import type {
   AdminAuditLogEntry,
   AdminOverview,
   CoachingNote,
+  CollectionEvent,
+  CollectionSession,
   AddTeamMemberPayload,
   AuthPayload,
   Fixture,
@@ -237,6 +239,84 @@ export async function createCoachingNote(payload: {
 
 export async function deleteCoachingNote(noteId: string): Promise<void> {
   await request<void>(`/match-prep/notes/${noteId}`, "DELETE");
+}
+
+export async function listActiveCollectionSessions(teamId: string): Promise<CollectionSession[]> {
+  return request<CollectionSession[]>(
+    `/collection-sessions/active?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
+export async function listAllCollectionSessions(teamId: string): Promise<CollectionSession[]> {
+  return request<CollectionSession[]>(
+    `/collection-sessions?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
+export async function startCollectionSession(payload: {
+  match_id: string;
+  team_id: string;
+  confirm_off_schedule?: boolean;
+}): Promise<CollectionSession> {
+  return request<CollectionSession>("/collection-sessions/start", "POST", payload);
+}
+
+export async function getCollectionSession(sessionId: string, teamId: string): Promise<CollectionSession> {
+  return request<CollectionSession>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
+export async function endCollectionSessionPeriod(
+  sessionId: string,
+  payload: { team_id: string },
+  confirmEarly?: boolean,
+): Promise<CollectionSession> {
+  const params = confirmEarly ? "?confirm_early=true" : "";
+  return request<CollectionSession>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}/end-period${params}`,
+    "POST",
+    payload,
+  );
+}
+
+export async function startCollectionSessionPeriod(
+  sessionId: string,
+  payload: { team_id: string },
+): Promise<CollectionSession> {
+  return request<CollectionSession>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}/start-period`,
+    "POST",
+    payload,
+  );
+}
+
+export async function listCollectionEvents(sessionId: string, teamId: string): Promise<CollectionEvent[]> {
+  return request<CollectionEvent[]>(
+    `/collection-sessions/${encodeURIComponent(sessionId)}/events?team_id=${encodeURIComponent(teamId)}`,
+    "GET",
+  );
+}
+
+export async function createCollectionEvent(
+  sessionId: string,
+  payload: {
+    team_id: string;
+    event_kind: "shot" | "tackle" | "interception" | "shot_against" | "sub";
+    player_id?: string | null;
+    player_in_id?: string | null;
+    assister_player_id?: string | null;
+    x_pct?: number | null;
+    y_pct?: number | null;
+    goal_mouth_y?: number | null;
+    goal_mouth_z?: number | null;
+    shot_outcome?: "miss" | "post" | "save" | "goal" | null;
+  },
+): Promise<CollectionEvent> {
+  return request<CollectionEvent>(`/collection-sessions/${encodeURIComponent(sessionId)}/events`, "POST", payload);
 }
 
 export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {

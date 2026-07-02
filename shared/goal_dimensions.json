@@ -1,0 +1,31 @@
+{
+  "units": "feet",
+  "sources": {
+    "5_aside": "https://www.thefa.com/-/media/files/pdf/get-involved/pitch-sizes---metric.ashx",
+    "7_aside": "https://www.thefa.com/-/media/files/pdf/get-involved/pitch-sizes---metric.ashx",
+    "9_aside": "https://www.thefa.com/-/media/files/pdf/get-involved/pitch-sizes---metric.ashx",
+    "11_aside": "https://www.theifab.com/laws/latest/the-field-of-play"
+  },
+  "formats": {
+    "5_aside": {
+      "pitch_width_m": 27,
+      "width_ft": 12,
+      "height_ft": 6
+    },
+    "7_aside": {
+      "pitch_width_m": 37,
+      "width_ft": 12,
+      "height_ft": 6
+    },
+    "9_aside": {
+      "pitch_width_m": 46,
+      "width_ft": 16,
+      "height_ft": 7
+    },
+    "11_aside": {
+      "pitch_width_m": 64,
+      "width_ft": 24,
+      "height_ft": 8
+    }
+  }
+}
