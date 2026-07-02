@@ -39,6 +39,7 @@ class CollectionEventCreateRequest(BaseModel):
     event_kind: Literal["shot", "tackle", "interception", "shot_against", "sub"] = "shot"
     player_id: str | None = Field(default=None, min_length=1, max_length=36)
     player_in_id: str | None = Field(default=None, min_length=1, max_length=36)
+    assister_player_id: str | None = Field(default=None, min_length=1, max_length=36)
     x_pct: float | None = Field(default=None, ge=0, le=100)
     y_pct: float | None = Field(default=None, ge=0, le=100)
     goal_mouth_y: float | None = Field(default=None, ge=0, le=100)
@@ -52,6 +53,7 @@ class CollectionEventResponse(BaseModel):
     match_id: str
     team_id: str
     player_id: str | None
+    assister_player_id: str | None = None
     event_kind: str
     period_number: int
     period_second: int

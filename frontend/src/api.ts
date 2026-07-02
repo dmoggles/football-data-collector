@@ -308,6 +308,7 @@ export async function createCollectionEvent(
     event_kind: "shot" | "tackle" | "interception" | "shot_against" | "sub";
     player_id?: string | null;
     player_in_id?: string | null;
+    assister_player_id?: string | null;
     x_pct?: number | null;
     y_pct?: number | null;
     goal_mouth_y?: number | null;

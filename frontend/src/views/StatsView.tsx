@@ -113,6 +113,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
       shirtNumber: number | null;
       shots: number;
       goals: number;
+      keyPasses: number;
+      assists: number;
       tackles: number;
       interceptions: number;
       saves: number;
@@ -126,6 +128,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
         shirtNumber: p?.shirt_number ?? null,
         shots: 0,
         goals: 0,
+        keyPasses: 0,
+        assists: 0,
         tackles: 0,
         interceptions: 0,
         saves: 0,
@@ -134,6 +138,12 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
     };
     const map = new Map<string, PlayerStatRow>();
     for (const e of statEvents) {
+      if (e.event_kind === "shot" && e.assister_player_id) {
+        if (!map.has(e.assister_player_id)) map.set(e.assister_player_id, makeRow(e.assister_player_id));
+        const ar = map.get(e.assister_player_id)!;
+        ar.keyPasses += 1;
+        if (e.shot_outcome === "goal") ar.assists += 1;
+      }
       if (!e.player_id) continue;
       if (!map.has(e.player_id)) map.set(e.player_id, makeRow(e.player_id));
       const row = map.get(e.player_id)!;
@@ -216,6 +226,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
       matches: number;
       shots: number;
       goals: number;
+      keyPasses: number;
+      assists: number;
       tackles: number;
       interceptions: number;
       saves: number;
@@ -231,6 +243,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
         matches: 0,
         shots: 0,
         goals: 0,
+        keyPasses: 0,
+        assists: 0,
         tackles: 0,
         interceptions: 0,
         saves: 0,
@@ -240,6 +254,15 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
     const sessionsByPlayer = new Map<string, Set<string>>();
     const map = new Map<string, SeasonPlayerRow>();
     for (const e of seasonEvents) {
+      if (e.event_kind === "shot" && e.assister_player_id) {
+        if (!map.has(e.assister_player_id)) {
+          map.set(e.assister_player_id, makeRow(e.assister_player_id));
+          sessionsByPlayer.set(e.assister_player_id, new Set());
+        }
+        const ar = map.get(e.assister_player_id)!;
+        ar.keyPasses += 1;
+        if (e.shot_outcome === "goal") ar.assists += 1;
+      }
       if (!e.player_id || e.event_kind === "sub") continue;
       if (!map.has(e.player_id)) {
         map.set(e.player_id, makeRow(e.player_id));
@@ -293,12 +316,17 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
     return [...bySession.entries()]
       .map(([sessionId, evts]) => {
         const sess = allCollectionSessions.find((s) => s.id === sessionId);
+        const assistEvts = seasonEvents.filter(
+          (e) => e.session_id === sessionId && e.event_kind === "shot" && e.assister_player_id === selectedSeasonPlayerId,
+        );
         return {
           sessionId,
           fixtureLabel: sess?.fixture_label ?? "Unknown match",
           kickoffAt: sess?.kickoff_at ?? null,
           shots: evts.filter((e) => e.event_kind === "shot").length,
           goals: evts.filter((e) => e.event_kind === "shot" && e.shot_outcome === "goal").length,
+          keyPasses: assistEvts.length,
+          assists: assistEvts.filter((e) => e.shot_outcome === "goal").length,
           saves: evts.filter((e) => e.event_kind === "shot_against" && e.shot_outcome === "save").length,
           conceded: evts.filter((e) => e.event_kind === "shot_against" && e.shot_outcome === "goal").length,
           tackles: evts.filter((e) => e.event_kind === "tackle").length,
@@ -306,7 +334,7 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
         };
       })
       .sort((a, b) => (b.kickoffAt ?? "").localeCompare(a.kickoffAt ?? ""));
-  }, [selectedSeasonPlayerEvents, allCollectionSessions]);
+  }, [selectedSeasonPlayerEvents, allCollectionSessions, seasonEvents, selectedSeasonPlayerId]);
 
   const selectedSeasonPlayerShotPoints = useMemo(
     () =>
@@ -727,6 +755,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                               {statPlayerMinutes.size > 0 ? <th>Min.</th> : null}
                               <th>Shots</th>
                               <th>Goals</th>
+                              <th>KP</th>
+                              <th>Ast</th>
                               <th>Saves</th>
                               <th>Conceded</th>
                               <th>Tackles</th>
@@ -751,6 +781,14 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                                 <td>
                                   {row.goals > 0 ? (
                                     <strong style={{ color: "var(--tl-accent)" }}>{row.goals}</strong>
+                                  ) : (
+                                    0
+                                  )}
+                                </td>
+                                <td>{row.keyPasses > 0 ? row.keyPasses : 0}</td>
+                                <td>
+                                  {row.assists > 0 ? (
+                                    <strong style={{ color: "var(--tl-accent)" }}>{row.assists}</strong>
                                   ) : (
                                     0
                                   )}
@@ -831,6 +869,20 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                                     {row.goals}
                                   </p>
                                 </article>
+                                {row.keyPasses > 0 || row.assists > 0 ? (
+                                  <>
+                                    <article>
+                                      <h3>Key Passes</h3>
+                                      <p>{row.keyPasses}</p>
+                                    </article>
+                                    <article>
+                                      <h3>Assists</h3>
+                                      <p style={row.assists > 0 ? { color: "var(--tl-accent)" } : {}}>
+                                        {row.assists}
+                                      </p>
+                                    </article>
+                                  </>
+                                ) : null}
                                 {row.saves > 0 || row.conceded > 0 ? (
                                   <>
                                     <article>
@@ -1023,6 +1075,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                                     <th>Match</th>
                                     <th>Shots</th>
                                     <th>Goals</th>
+                                    <th>KP</th>
+                                    <th>Ast</th>
                                     <th>Saves</th>
                                     <th>Conceded</th>
                                     <th>Tackles</th>
@@ -1038,6 +1092,16 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                                         {mr.goals > 0 ? (
                                           <strong style={{ color: "var(--tl-accent)" }}>
                                             {mr.goals}
+                                          </strong>
+                                        ) : (
+                                          0
+                                        )}
+                                      </td>
+                                      <td>{mr.keyPasses}</td>
+                                      <td>
+                                        {mr.assists > 0 ? (
+                                          <strong style={{ color: "var(--tl-accent)" }}>
+                                            {mr.assists}
                                           </strong>
                                         ) : (
                                           0
@@ -1130,6 +1194,8 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                               <th>Games</th>
                               <th>Shots</th>
                               <th>Goals</th>
+                              <th>KP</th>
+                              <th>Ast</th>
                               <th>Saves</th>
                               <th>Conceded</th>
                               <th>Tackles</th>
@@ -1160,6 +1226,16 @@ export function StatsView({ selectedTeamId, players, playersForSelectedTeam }: S
                                   {row.goals > 0 ? (
                                     <strong style={{ color: "var(--tl-accent)" }}>
                                       {row.goals}
+                                    </strong>
+                                  ) : (
+                                    0
+                                  )}
+                                </td>
+                                <td>{row.keyPasses > 0 ? row.keyPasses : 0}</td>
+                                <td>
+                                  {row.assists > 0 ? (
+                                    <strong style={{ color: "var(--tl-accent)" }}>
+                                      {row.assists}
                                     </strong>
                                   ) : (
                                     0

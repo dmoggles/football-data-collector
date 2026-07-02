@@ -224,6 +224,7 @@ export type CollectionEvent = {
   event_kind: "shot" | "tackle" | "interception" | "shot_against" | "sub";
   player_id: string | null;
   player_in_id: string | null;
+  assister_player_id: string | null;
   period_number: number;
   period_second: number;
   x_pct: number | null;

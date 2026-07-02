@@ -51,6 +51,7 @@ export function CollectionView({
   const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
   const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "shot_against">("shot");
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
+  const [eventComposerAssisterId, setEventComposerAssisterId] = useState("");
   const [eventComposerGoalPoint, setEventComposerGoalPoint] = useState<{ y: number; z: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -264,6 +265,7 @@ export function CollectionView({
     const nextEventType = xPct <= 50 ? "shot_against" : "shot";
     setEventComposerType(nextEventType);
     setEventComposerGoalPoint(null);
+    setEventComposerAssisterId("");
     setEventComposerPlayerId(
       nextEventType === "shot_against"
         ? predictGoalkeeperPlayerId()
@@ -348,6 +350,7 @@ export function CollectionView({
       setPendingEventPitchPoint(null);
       setEventComposerGoalPoint(null);
       setEventComposerPlayerId("");
+      setEventComposerAssisterId("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : `Failed to record ${eventComposerType}`);
     } finally {
@@ -364,6 +367,7 @@ export function CollectionView({
         team_id: selectedTeamId,
         event_kind: eventComposerType,
         player_id: eventComposerPlayerId,
+        assister_player_id: eventComposerType === "shot" ? (eventComposerAssisterId || null) : null,
         x_pct: pendingEventPitchPoint.xPct,
         y_pct: pendingEventPitchPoint.yPct,
         goal_mouth_y: eventComposerGoalPoint?.y ?? null,
@@ -375,6 +379,7 @@ export function CollectionView({
       setPendingEventPitchPoint(null);
       setEventComposerGoalPoint(null);
       setEventComposerPlayerId("");
+      setEventComposerAssisterId("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Failed to record shot");
     } finally {
@@ -597,6 +602,7 @@ export function CollectionView({
                 className={`button ${eventComposerType === "shot" ? "primary" : "secondary"}`}
                 onClick={() => {
                   setEventComposerType("shot");
+                  setEventComposerAssisterId("");
                   if (!pendingEventPitchPoint) return;
                   const predictedPlayerId = predictLikelyPlayerId({
                     eventKind: "shot",
@@ -615,6 +621,7 @@ export function CollectionView({
                 onClick={() => {
                   setEventComposerType("shot_against");
                   setEventComposerGoalPoint(null);
+                  setEventComposerAssisterId("");
                   setEventComposerPlayerId(predictGoalkeeperPlayerId());
                 }}
               >
@@ -625,6 +632,7 @@ export function CollectionView({
                 className={`button ${eventComposerType === "tackle" ? "primary" : "secondary"}`}
                 onClick={() => {
                   setEventComposerType("tackle");
+                  setEventComposerAssisterId("");
                   if (!pendingEventPitchPoint) return;
                   const predictedPlayerId = predictLikelyPlayerId({
                     eventKind: "tackle",
@@ -642,6 +650,7 @@ export function CollectionView({
                 className={`button ${eventComposerType === "interception" ? "primary" : "secondary"}`}
                 onClick={() => {
                   setEventComposerType("interception");
+                  setEventComposerAssisterId("");
                   if (!pendingEventPitchPoint) return;
                   const predictedPlayerId = predictLikelyPlayerId({
                     eventKind: "interception",
@@ -675,6 +684,28 @@ export function CollectionView({
                   <p className="muted">No matchday squad players available for this fixture.</p>
                 ) : null}
               </div>
+              {eventComposerType === "shot" ? (
+                <div className="event-player-panel">
+                  <p className="muted" style={{ fontSize: "0.75rem", marginBottom: "0.3rem" }}>
+                    Key pass by <span style={{ color: "var(--tl-muted, #7a9ab5)" }}>(optional)</span>
+                  </p>
+                  <div className="event-player-grid">
+                    {collectionEventPlayers.map((player) => (
+                      <button
+                        key={player.id}
+                        type="button"
+                        className={`event-player-tile ${eventComposerAssisterId === player.id ? "assister-selected" : ""}`}
+                        onClick={() =>
+                          setEventComposerAssisterId(eventComposerAssisterId === player.id ? "" : player.id)
+                        }
+                        title={player.display_name}
+                      >
+                        <strong>{player.shirt_number ? `#${player.shirt_number}` : "?"}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {eventComposerType === "shot" || eventComposerType === "shot_against" ? (
                 <div className="event-shot-panel">
                   <GoalMouthDiagram
@@ -718,6 +749,7 @@ export function CollectionView({
                         setPendingEventPitchPoint(null);
                         setEventComposerGoalPoint(null);
                         setEventComposerPlayerId("");
+                        setEventComposerAssisterId("");
                       }}
                       disabled={isSubmitting}
                     >
@@ -749,6 +781,7 @@ export function CollectionView({
                         setPendingEventPitchPoint(null);
                         setEventComposerGoalPoint(null);
                         setEventComposerPlayerId("");
+                        setEventComposerAssisterId("");
                       }}
                       disabled={isSubmitting}
                     >

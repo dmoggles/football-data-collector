@@ -55,6 +55,12 @@ class Event(Base):
         nullable=True,
         index=True,
     )
+    assister_player_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("players.id"),
+        nullable=True,
+        index=True,
+    )
     event_kind: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     period_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     period_second: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
