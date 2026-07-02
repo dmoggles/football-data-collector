@@ -729,6 +729,17 @@ textarea {
   box-shadow: inset 0 0 0 1px rgba(245, 166, 35, 0.38);
 }
 
+.event-player-tile.bench {
+  opacity: 0.4;
+  border-color: #2e4457;
+  color: #5d7d96;
+}
+
+.event-player-tile.bench.selected,
+.event-player-tile.bench.assister-selected {
+  opacity: 0.85;
+}
+
 .event-shot-panel {
   display: grid;
   gap: 0.45rem;

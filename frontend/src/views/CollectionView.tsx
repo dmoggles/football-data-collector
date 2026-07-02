@@ -671,7 +671,7 @@ export function CollectionView({
                     <button
                       key={player.id}
                       type="button"
-                      className={`event-player-tile ${eventComposerPlayerId === player.id ? "selected" : ""}`}
+                      className={`event-player-tile ${eventComposerPlayerId === player.id ? "selected" : ""} ${!collectionCurrentLineup.slotByPlayerId.has(player.id) ? "bench" : ""}`}
                       onClick={() => setEventComposerPlayerId(player.id)}
                       title={player.display_name}
                     >
@@ -694,7 +694,7 @@ export function CollectionView({
                       <button
                         key={player.id}
                         type="button"
-                        className={`event-player-tile ${eventComposerAssisterId === player.id ? "assister-selected" : ""}`}
+                        className={`event-player-tile ${eventComposerAssisterId === player.id ? "assister-selected" : ""} ${!collectionCurrentLineup.slotByPlayerId.has(player.id) ? "bench" : ""}`}
                         onClick={() =>
                           setEventComposerAssisterId(eventComposerAssisterId === player.id ? "" : player.id)
                         }
