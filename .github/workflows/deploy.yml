@@ -137,17 +137,7 @@ jobs:
             set -euo pipefail
             export TAG="${{ github.event.release.tag_name }}"
             cd ~/tapline
-
-            # Pull new images while old containers keep serving traffic
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull
-
-            # Run migrations with new image (starts MySQL first if needed)
-            docker compose -f docker-compose.prod.yml --env-file .env.prod \
-              run --rm backend alembic upgrade head
-
-            # Hot-swap app containers only; MySQL never touched, data preserved
-            docker compose -f docker-compose.prod.yml --env-file .env.prod \
-              up -d --no-deps backend frontend
-
-            # Reclaim disk space
+            docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm backend alembic upgrade head
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --no-deps backend frontend
             docker image prune -f
