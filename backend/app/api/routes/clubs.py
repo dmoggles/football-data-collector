@@ -9,6 +9,7 @@ from app.api.deps import get_db
 from app.core.club_logos import CLUB_LOGOS_DIR, build_club_logo_url
 from app.models.club import Club
 from app.models.user import User
+from app.schemas.admin import AdminClubOverview
 
 router = APIRouter(prefix="/clubs", tags=["clubs"])
 
@@ -17,6 +18,18 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp": "webp",
 }
 MAX_LOGO_BYTES = 5 * 1024 * 1024
+
+
+@router.get("", response_model=list[AdminClubOverview])
+def list_clubs(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[dict]:
+    clubs = db.scalars(select(Club).order_by(Club.name)).all()
+    return [
+        {"id": c.id, "name": c.name, "logo_url": build_club_logo_url(c.logo_filename)}
+        for c in clubs
+    ]
 
 
 @router.post("/{club_id}/logo")

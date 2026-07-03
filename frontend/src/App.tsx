@@ -28,6 +28,7 @@ import {
   getCollectionSession,
   getMe,
   listActiveCollectionSessions,
+  listClubs,
   listFixtures,
   listMatchPrepFixtures,
   listPlayers,
@@ -41,6 +42,7 @@ import {
 } from "./api";
 import type {
   AdminAuditLogEntry,
+  AdminClubOverview,
   AdminOverview,
   Fixture,
   CollectionSession,
@@ -64,6 +66,7 @@ function App() {
   const [password, setPassword] = useState("");
 
   const [teams, setTeams] = useState<Team[]>([]);
+  const [clubs, setClubs] = useState<AdminClubOverview[]>([]);
   const [teamDirectory, setTeamDirectory] = useState<TeamDirectory[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [matchPrepFixtures, setMatchPrepFixtures] = useState<MatchPrepFixture[]>([]);
@@ -145,16 +148,18 @@ function App() {
   const clubNameOptions = useMemo(() => {
     const teamDirectoryClubNames = teamDirectory.map((team) => team.club_name.trim()).filter(Boolean);
     const adminClubNames = adminOverview?.clubs.map((club) => club.name.trim()).filter(Boolean) ?? [];
-    const uniqueClubNames = Array.from(new Set([...teamDirectoryClubNames, ...adminClubNames]));
+    const apiClubNames = clubs.map((club) => club.name.trim()).filter(Boolean);
+    const uniqueClubNames = Array.from(new Set([...teamDirectoryClubNames, ...adminClubNames, ...apiClubNames]));
     return uniqueClubNames.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name }));
-  }, [adminOverview, teamDirectory]);
+  }, [adminOverview, clubs, teamDirectory]);
   const loadWorkspaceData = useCallback(async (preferredTeamId = "") => {
     setIsWorkspaceLoading(true);
     try {
-      const [teamsResponse, playersResponse, teamDirectoryResponse] = await Promise.all([
+      const [teamsResponse, playersResponse, teamDirectoryResponse, clubsResponse] = await Promise.all([
         listTeams(),
         listPlayers(),
         listTeamDirectory(),
+        listClubs(),
       ]);
       const nextTeamId = teamsResponse.some((team) => team.id === preferredTeamId)
         ? preferredTeamId
@@ -162,6 +167,7 @@ function App() {
       const fixturesResponse = nextTeamId ? await listFixtures(nextTeamId) : [];
       setTeams(teamsResponse);
       setTeamDirectory(teamDirectoryResponse);
+      setClubs(clubsResponse);
       setFixtures(fixturesResponse);
       setPlayers(playersResponse);
       setSelectedTeamId(nextTeamId);

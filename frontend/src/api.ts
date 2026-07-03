@@ -1,5 +1,6 @@
 import type {
   AdminAuditLogEntry,
+  AdminClubOverview,
   AdminOverview,
   CoachingNote,
   CollectionEvent,
@@ -127,6 +128,10 @@ export async function changePassword(payload: {
 export async function listTeams(): Promise<Team[]> {
   const teams = await request<TeamApiResponse[]>("/teams", "GET");
   return teams.map(toTeam);
+}
+
+export async function listClubs(): Promise<AdminClubOverview[]> {
+  return request<AdminClubOverview[]>("/clubs", "GET");
 }
 
 export async function listTeamDirectory(): Promise<TeamDirectory[]> {
