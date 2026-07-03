@@ -7,4 +7,3 @@ tests/
 .env
 .env.*
 uploaded_media/
-scripts/
