@@ -1,0 +1,142 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE:      tapline_dev
+          MYSQL_USER:          tapline_app
+          MYSQL_PASSWORD:      tapline_app_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -uroot -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Create test database
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -uroot -proot <<'SQL'
+            CREATE DATABASE IF NOT EXISTS tapline_test
+              CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+            GRANT ALL PRIVILEGES ON tapline_dev.*  TO 'tapline_app'@'%';
+            GRANT ALL PRIVILEGES ON tapline_test.* TO 'tapline_app'@'%';
+            FLUSH PRIVILEGES;
+          SQL
+
+      - name: Migrate
+        env:
+          APP_ENV:             test
+          MYSQL_HOST:          127.0.0.1
+          MYSQL_PORT:          3306
+          MYSQL_USER:          tapline_app
+          MYSQL_PASSWORD:      tapline_app_password
+          MYSQL_DATABASE:      tapline_dev
+          MYSQL_TEST_DATABASE: tapline_test
+        run: uv run alembic upgrade head
+
+      - name: Pytest
+        env:
+          APP_ENV:             test
+          MYSQL_HOST:          127.0.0.1
+          MYSQL_PORT:          3306
+          MYSQL_USER:          tapline_app
+          MYSQL_PASSWORD:      tapline_app_password
+          MYSQL_DATABASE:      tapline_dev
+          MYSQL_TEST_DATABASE: tapline_test
+        run: uv run pytest
+
+  build-and-push:
+    name: Build & Push (${{ matrix.service }})
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            context:    ./backend
+            dockerfile: ./backend/Dockerfile
+            image:      ghcr.io/dmoggles/tapline-backend
+          - service: frontend
+            context:    .
+            dockerfile: ./frontend/Dockerfile
+            image:      ghcr.io/dmoggles/tapline-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context:    ${{ matrix.context }}
+          file:       ${{ matrix.dockerfile }}
+          push:       true
+          tags: |
+            ${{ matrix.image }}:dev
+            ${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}-dev
+          cache-to:   type=gha,mode=max,scope=${{ matrix.service }}-dev
+
+  deploy:
+    name: Deploy
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key:      ${{ secrets.SSH_PRIVATE_KEY }}
+          source:   docker-compose.dev.yml
+          target:   ~/tapline-dev/
+
+      - name: Pull, migrate, restart
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key:      ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            cd ~/tapline-dev
+            docker compose -f docker-compose.dev.yml --env-file .env.dev pull
+            docker compose -f docker-compose.dev.yml --env-file .env.dev run --rm backend alembic upgrade head
+            docker compose -f docker-compose.dev.yml --env-file .env.dev up -d --no-deps backend frontend
+            docker image prune -f
