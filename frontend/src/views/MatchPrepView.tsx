@@ -143,9 +143,19 @@ export function MatchPrepView({
     }
     return mapping;
   }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan]);
+  const matchPrepPitchPlayerIds = useMemo(
+    () => new Set(Object.values(matchPrepPlayerBySlotId).map((player) => player.player_id)),
+    [matchPrepPlayerBySlotId],
+  );
   const matchPrepBenchPlayers = useMemo(
-    () => (matchPrepPlan ? matchPrepPlan.players.filter((p) => p.is_available && !p.lineup_slot) : []),
-    [matchPrepPlan],
+    () => (
+      matchPrepPlan
+        ? matchPrepPlan.players.filter(
+            (player) => player.is_available && player.in_matchday_squad && !matchPrepPitchPlayerIds.has(player.player_id),
+          )
+        : []
+    ),
+    [matchPrepPitchPlayerIds, matchPrepPlan],
   );
   const matchPrepUnavailablePlayers = useMemo(
     () => (matchPrepPlan ? matchPrepPlan.players.filter((p) => !p.is_available && !p.lineup_slot) : []),
@@ -655,12 +665,18 @@ export function MatchPrepView({
                         }
                         if (selectedPrepPlayerId) {
                           if (activeMatchPrepSegmentIndex > 0) {
+                            const selectedPlayerIsOnPitch = matchPrepPitchPlayerIds.has(selectedPrepPlayerId);
                             if (assignedPlayer && assignedPlayer.player_id !== selectedPrepPlayerId) {
-                              addOrReplaceMatchPrepPlannedSwap(
-                                activeMatchPrepSegmentIndex - 1,
-                                assignedPlayer.player_id,
-                                selectedPrepPlayerId,
-                              );
+                              if (selectedPlayerIsOnPitch) {
+                                setSelectedPrepPlayerId(assignedPlayer.player_id);
+                                return;
+                              }
+                              addOrReplaceMatchPrepPlannedSwap(activeMatchPrepSegmentIndex - 1, assignedPlayer.player_id, selectedPrepPlayerId);
+                              setSelectedPrepPlayerId("");
+                              return;
+                            }
+                            if (!assignedPlayer) {
+                              assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
                               setSelectedPrepPlayerId("");
                             }
                             return;
