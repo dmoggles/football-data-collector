@@ -146,7 +146,7 @@ function App() {
     [selectedTeamId, teamDirectory],
   );
   const clubNameOptions = useMemo(() => {
-    const teamDirectoryClubNames = teamDirectory.map((team) => team.club_name.trim()).filter(Boolean);
+    const teamDirectoryClubNames = teamDirectory.map((team) => team.club_name?.trim()).filter((name): name is string => Boolean(name));
     const adminClubNames = adminOverview?.clubs.map((club) => club.name.trim()).filter(Boolean) ?? [];
     const apiClubNames = clubs.map((club) => club.name.trim()).filter(Boolean);
     const uniqueClubNames = Array.from(new Set([...teamDirectoryClubNames, ...adminClubNames, ...apiClubNames]));
@@ -254,10 +254,16 @@ function App() {
       try {
         const me = await getMe();
         setUser(me);
-        await loadWorkspaceData();
-        await loadAdminData();
       } catch {
         setUser(null);
+        setIsLoading(false);
+        return;
+      }
+      try {
+        await loadWorkspaceData();
+        await loadAdminData();
+      } catch (requestError) {
+        setError(requestError instanceof Error ? requestError.message : "Failed to load workspace");
       } finally {
         setIsLoading(false);
       }

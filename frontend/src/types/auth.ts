@@ -26,9 +26,10 @@ export type AdminTeamOwnerOverview = {
 
 export type AdminTeamOverview = {
   id: string;
-  club_id: string;
-  club_name: string;
+  club_id: string | null;
+  club_name: string | null;
   team_name: string;
+  is_unclaimed: boolean;
   owners: AdminTeamOwnerOverview[];
 };
 
@@ -36,6 +37,12 @@ export type AdminOverview = {
   users: AdminUserOverview[];
   clubs: AdminClubOverview[];
   teams: AdminTeamOverview[];
+};
+
+export type AdminTeamMergeCandidate = {
+  team_id: string;
+  display_name: string;
+  score: number;
 };
 
 export type AdminAuditLogEntry = {
@@ -51,21 +58,23 @@ export type AdminAuditLogEntry = {
 
 export type Team = {
   id: string;
-  club_id: string;
-  club_name: string;
+  club_id: string | null;
+  club_name: string | null;
   club_logo_url: string | null;
   team_name: string;
   my_role?: TeamRole;
   display_name: string;
+  is_unclaimed: boolean;
 };
 
 export type TeamDirectory = {
   id: string;
-  club_id: string;
-  club_name: string;
+  club_id: string | null;
+  club_name: string | null;
   club_logo_url: string | null;
   team_name: string;
   display_name: string;
+  is_unclaimed: boolean;
 };
 
 export type TeamMember = {
@@ -130,8 +139,10 @@ export type PlayerPayload = {
 };
 
 export type FixturePayload = {
-  home_team_id: string;
-  away_team_id: string;
+  home_team_id?: string | null;
+  away_team_id?: string | null;
+  home_team_name?: string | null;
+  away_team_name?: string | null;
   format: MatchFormat;
   period_format: MatchPeriodFormat;
   period_length_minutes: number;

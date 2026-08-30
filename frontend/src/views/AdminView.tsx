@@ -5,9 +5,12 @@ import {
   assignUserGlobalRole,
   createAdminClub,
   createAdminTeam,
+  claimAdminTeam,
   deleteAdminClub,
   deleteAdminTeam,
   removeAdminTeamOwner,
+  mergeAdminTeam,
+  listAdminTeamMergeCandidates,
   resolveApiAssetUrl,
   revokeUserGlobalRole,
   updateAdminClub,
@@ -55,7 +58,7 @@ export function AdminView({
   const filteredAdminTeams = useMemo(() => {
     if (!adminOverview) return [];
     if (!showUnclaimedOnly) return adminOverview.teams;
-    return adminOverview.teams.filter((team) => team.owners.length === 0);
+    return adminOverview.teams.filter((team) => team.is_unclaimed);
   }, [adminOverview, showUnclaimedOnly]);
 
   const handleCreateAdminClub = async (event: FormEvent<HTMLFormElement>) => {
@@ -209,9 +212,9 @@ export function AdminView({
     }
   };
 
-  const startAdminTeamEdit = (teamId: string, clubId: string, currentTeamName: string) => {
+  const startAdminTeamEdit = (teamId: string, clubId: string | null, currentTeamName: string) => {
     setAdminEditingTeamId(teamId);
-    setAdminEditingTeamClubId(clubId);
+    setAdminEditingTeamClubId(clubId ?? "");
     setAdminEditingTeamName(currentTeamName);
   };
 
@@ -251,6 +254,58 @@ export function AdminView({
     }
   };
 
+  const handleClaimTeam = async (teamId: string, currentName: string) => {
+    if (!adminOverview) return;
+    const teamName = window.prompt("Corrected team name", currentName)?.trim();
+    if (!teamName) return;
+    const clubName = window.prompt("Existing or new club name")?.trim();
+    if (!clubName) return;
+    const existingClub = adminOverview.clubs.find((club) => club.name.toLowerCase() === clubName.toLowerCase());
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await claimAdminTeam(teamId, existingClub
+        ? { team_name: teamName, club_id: existingClub.id }
+        : { team_name: teamName, new_club_name: clubName });
+      await Promise.all([onAdminDataChanged(), onWorkspaceDataChanged()]);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to claim team");
+    } finally { setIsSubmitting(false); }
+  };
+
+  const handleMergeTeam = async (teamId: string) => {
+    if (!adminOverview) return;
+    const source = adminOverview.teams.find((team) => team.id === teamId);
+    if (!source) return;
+    setError(null);
+    let suggestions;
+    try {
+      suggestions = (await listAdminTeamMergeCandidates(teamId)).slice(0, 8);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to load merge candidates");
+      return;
+    }
+    const selection = window.prompt(
+      `Canonical team to merge “${source.team_name}” into:\n` +
+      suggestions.map((candidate, index) => `${index + 1}. ${candidate.display_name} (${candidate.score}%)`).join("\n") +
+      "\n\nEnter a number",
+      suggestions[0] ? "1" : "",
+    )?.trim();
+    if (!selection) return;
+    const selectedIndex = Number(selection) - 1;
+    const target = Number.isInteger(selectedIndex) ? suggestions[selectedIndex] : undefined;
+    if (!target) { setError("Select one of the numbered canonical team candidates"); return; }
+    if (!window.confirm(`Move all fixture references into ${target.display_name} and delete the unclaimed team?`)) return;
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await mergeAdminTeam(teamId, target.team_id);
+      await Promise.all([onAdminDataChanged(), onWorkspaceDataChanged()]);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to merge team");
+    } finally { setIsSubmitting(false); }
+  };
+
   return (
     <section className="section-card">
       {error ? <p className="error-message">{error}</p> : null}
@@ -276,7 +331,7 @@ export function AdminView({
             <p className="muted">Clubs: {adminOverview.clubs.length}</p>
             <p className="muted">Teams: {adminOverview.teams.length}</p>
             <p className="muted">
-              Unclaimed teams: {adminOverview.teams.filter((team) => team.owners.length === 0).length}
+              Unclaimed teams: {adminOverview.teams.filter((team) => team.is_unclaimed).length}
             </p>
           </div>
         </div>
@@ -416,7 +471,7 @@ export function AdminView({
               <SearchableSelect
                 value={adminAssignTeamId}
                 onChange={setAdminAssignTeamId}
-                options={adminOverview.teams.map((adminTeam) => ({
+                options={adminOverview.teams.filter((team) => !team.is_unclaimed).map((adminTeam) => ({
                   value: adminTeam.id,
                   label: `${adminTeam.club_name} ${adminTeam.team_name}`,
                 }))}
@@ -475,9 +530,8 @@ export function AdminView({
                     </div>
                   ) : (
                     <>
-                      <span>
-                        {adminTeam.club_name} {adminTeam.team_name}
-                      </span>
+                      <span>{[adminTeam.club_name, adminTeam.team_name].filter(Boolean).join(" ")}</span>
+                      {adminTeam.is_unclaimed ? <p className="muted">Unclaimed</p> : null}
                       {adminTeam.owners.length > 0 ? (
                         <div className="stack-form">
                           {adminTeam.owners.map((owner) => (
@@ -496,9 +550,7 @@ export function AdminView({
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <p className="muted">Unclaimed</p>
-                      )}
+                      ) : <p className="muted">No manager</p>}
                     </>
                   )}
                 </div>
@@ -524,15 +576,18 @@ export function AdminView({
                     </>
                   ) : (
                     <>
-                      <button
+                      {adminTeam.is_unclaimed ? <>
+                        <button className="button primary" type="button" disabled={isSubmitting} onClick={() => handleClaimTeam(adminTeam.id, adminTeam.team_name)}>Claim</button>
+                        <button className="button secondary" type="button" disabled={isSubmitting} onClick={() => handleMergeTeam(adminTeam.id)}>Merge</button>
+                      </> : <button
                         className="button secondary"
                         type="button"
                         disabled={isSubmitting}
                         onClick={() => focusAssignTeamAdmin(adminTeam.id)}
                       >
                         Add Manager
-                      </button>
-                      <button
+                      </button>}
+                      {!adminTeam.is_unclaimed ? <button
                         className="button secondary"
                         type="button"
                         disabled={isSubmitting}
@@ -541,7 +596,7 @@ export function AdminView({
                         }
                       >
                         Edit
-                      </button>
+                      </button> : null}
                       <button
                         className="button secondary"
                         type="button"

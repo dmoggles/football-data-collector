@@ -34,16 +34,18 @@ class TeamMemberResponse(BaseModel):
 
 class TeamResponse(BaseModel):
     id: str
-    club_id: str
-    club_name: str
+    club_id: str | None
+    club_name: str | None
     club_logo_url: str | None = None
     team_name: str
     my_role: str
+    is_unclaimed: bool
 
 
 class TeamDirectoryResponse(BaseModel):
     id: str
-    club_id: str
-    club_name: str
+    club_id: str | None
+    club_name: str | None
     club_logo_url: str | None = None
     team_name: str
+    is_unclaimed: bool

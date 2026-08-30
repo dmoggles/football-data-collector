@@ -95,7 +95,7 @@ export function TeamsView({
                 disabled={isSubmitting || !isSuperAdmin}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
-                  void handleUploadClubLogo(selectedTeam.club_id, file);
+                  if (selectedTeam.club_id) void handleUploadClubLogo(selectedTeam.club_id, file);
                   event.currentTarget.value = "";
                 }}
               />
