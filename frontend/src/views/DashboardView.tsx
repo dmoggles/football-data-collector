@@ -34,7 +34,8 @@ export function DashboardView({
     return fixtures.filter(
       (fixture) =>
         (fixture.home_team_id === selectedTeamId || fixture.away_team_id === selectedTeamId) &&
-        fixture.status.toLowerCase() !== "cancelled",
+        fixture.status.toLowerCase() !== "cancelled" &&
+        fixture.collection_state === null,
     );
   }, [fixtures, selectedTeamId]);
   const [selectedCollectionFixtureId, setSelectedCollectionFixtureId] = useState("");
@@ -51,7 +52,7 @@ export function DashboardView({
   const nextMatchTile = useMemo(() => {
     const now = Date.now();
     const upcoming = fixtures
-      .filter((fixture) => fixture.status.toLowerCase() !== "cancelled")
+      .filter((fixture) => fixture.status.toLowerCase() !== "cancelled" && fixture.collection_state === null)
       .map((fixture) => {
         const kickoff = fixture.kickoff_at ? new Date(fixture.kickoff_at) : null;
         return { fixture, kickoff };

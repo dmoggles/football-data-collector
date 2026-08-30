@@ -269,6 +269,12 @@ export async function startCollectionSession(payload: {
   return request<CollectionSession>("/collection-sessions/start", "POST", payload);
 }
 
+export async function resetCollectionSession(sessionId: string, teamId: string): Promise<void> {
+  await request<void>(`/collection-sessions/${encodeURIComponent(sessionId)}/reset`, "POST", {
+    team_id: teamId,
+  });
+}
+
 export async function getCollectionSession(sessionId: string, teamId: string): Promise<CollectionSession> {
   return request<CollectionSession>(
     `/collection-sessions/${encodeURIComponent(sessionId)}?team_id=${encodeURIComponent(teamId)}`,

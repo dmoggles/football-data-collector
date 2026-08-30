@@ -110,6 +110,7 @@ export type Fixture = {
   kickoff_at: string | null;
   status: string;
   can_manage: boolean;
+  collection_state: "live" | "ended" | null;
 };
 
 export type AuthPayload = {
