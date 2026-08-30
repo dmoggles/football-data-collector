@@ -19,6 +19,11 @@ export function MoreView({ email, isSuperAdmin, onNavigate, onLogout, isSubmitti
         </div>
       </header>
 
+      <section className="menu-card" aria-labelledby="match-menu-heading">
+        <h2 id="match-menu-heading">Match day</h2>
+        <button type="button" onClick={() => onNavigate("/fixtures/prep")}><span><strong>Match preparation</strong><small>Lineup, formation, and substitution plan</small></span><Chevron /></button>
+      </section>
+
       <section className="menu-card" aria-labelledby="team-menu-heading">
         <h2 id="team-menu-heading">Team</h2>
         <button type="button" onClick={() => onNavigate("/team/squad")}><span><strong>Squad</strong><small>Players and shirt numbers</small></span><Chevron /></button>
