@@ -39,6 +39,11 @@ export function MatchPrepView({
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
   const [selectedPrepPlayerId, setSelectedPrepPlayerId] = useState("");
   const [isPitchHelpOpen, setIsPitchHelpOpen] = useState(false);
+  const [pendingSegmentRemoval, setPendingSegmentRemoval] = useState<{
+    segmentIndex: number;
+    playerOutId: string;
+    slotId: string;
+  } | null>(null);
   const lastPitchTapRef = useRef<{ playerId: string; at: number } | null>(null);
   const suppressPitchClickRef = useRef(false);
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
@@ -141,8 +146,11 @@ export function MatchPrepView({
       const player = playersById[playerId];
       if (player) mapping[slotId] = player;
     }
+    if (pendingSegmentRemoval?.segmentIndex === activeMatchPrepSegmentIndex - 1) {
+      delete mapping[pendingSegmentRemoval.slotId];
+    }
     return mapping;
-  }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan]);
+  }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan, pendingSegmentRemoval]);
   const matchPrepPitchPlayerIds = useMemo(
     () => new Set(Object.values(matchPrepPlayerBySlotId).map((player) => player.player_id)),
     [matchPrepPlayerBySlotId],
@@ -194,6 +202,10 @@ export function MatchPrepView({
 
   const handleSaveMatchPrepPlan = async () => {
     if (!matchPrepPlan) return;
+    if (pendingSegmentRemoval) {
+      setError("Choose the player coming on to complete the pending substitution");
+      return;
+    }
     for (const segment of matchPrepPlan.substitution_segments) {
       if (!Number.isInteger(segment.end_minute) || segment.end_minute < 1) {
         setError("Each substitution segment must have a start minute of at least 1");
@@ -449,6 +461,15 @@ export function MatchPrepView({
     });
   };
 
+  const planBenchPlayerForSelectedPitchPlayer = (playerInId: string): boolean => {
+    if (activeMatchPrepSegmentIndex <= 0 || !selectedPrepPlayerId) return false;
+    if (!matchPrepPitchPlayerIds.has(selectedPrepPlayerId) || matchPrepPitchPlayerIds.has(playerInId)) return false;
+    addOrReplaceMatchPrepPlannedSwap(activeMatchPrepSegmentIndex - 1, selectedPrepPlayerId, playerInId);
+    setPendingSegmentRemoval(null);
+    setSelectedPrepPlayerId("");
+    return true;
+  };
+
   const removeMatchPrepPlannedSwap = (segmentIndex: number, swapIndex: number) => {
     setMatchPrepPlan((current) => {
       if (!current) return current;
@@ -638,7 +659,7 @@ export function MatchPrepView({
                       <span>Tap another player to swap positions.</span>
                       <span>Tap an empty position to move there.</span>
                       <span>Double-tap a player to move them to the bench.</span>
-                      <span>On later segments, select a bench player and then the player coming off.</span>
+                      <span>On later segments, use the same gestures to create the substitution listing.</span>
                     </div>
                   ) : null}
                 </div>
@@ -672,12 +693,23 @@ export function MatchPrepView({
                                 return;
                               }
                               addOrReplaceMatchPrepPlannedSwap(activeMatchPrepSegmentIndex - 1, assignedPlayer.player_id, selectedPrepPlayerId);
+                              setPendingSegmentRemoval(null);
                               setSelectedPrepPlayerId("");
                               return;
                             }
                             if (!assignedPlayer) {
-                              assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
-                              setSelectedPrepPlayerId("");
+                              if (
+                                pendingSegmentRemoval?.segmentIndex === activeMatchPrepSegmentIndex - 1 &&
+                                pendingSegmentRemoval.slotId === slot.id
+                              ) {
+                                addOrReplaceMatchPrepPlannedSwap(
+                                  activeMatchPrepSegmentIndex - 1,
+                                  pendingSegmentRemoval.playerOutId,
+                                  selectedPrepPlayerId,
+                                );
+                                setPendingSegmentRemoval(null);
+                                setSelectedPrepPlayerId("");
+                              }
                             }
                             return;
                           }
@@ -693,22 +725,38 @@ export function MatchPrepView({
                         if (assignedPlayer) setSelectedPrepPlayerId(assignedPlayer.player_id);
                       }}
                       onPointerUp={(event) => {
-                        if (event.pointerType !== "touch" || !assignedPlayer || activeMatchPrepSegmentIndex > 0) return;
+                        if (event.pointerType !== "touch" || !assignedPlayer) return;
                         const now = Date.now();
                         const lastTap = lastPitchTapRef.current;
                         if (lastTap?.playerId === assignedPlayer.player_id && now - lastTap.at <= 350) {
                           event.preventDefault();
                           suppressPitchClickRef.current = true;
                           lastPitchTapRef.current = null;
-                          moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          if (activeMatchPrepSegmentIndex > 0) {
+                            setPendingSegmentRemoval({
+                              segmentIndex: activeMatchPrepSegmentIndex - 1,
+                              playerOutId: assignedPlayer.player_id,
+                              slotId: slot.id,
+                            });
+                          } else {
+                            moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          }
                           setSelectedPrepPlayerId("");
                           return;
                         }
                         lastPitchTapRef.current = { playerId: assignedPlayer.player_id, at: now };
                       }}
                       onDoubleClick={() => {
-                        if (assignedPlayer && activeMatchPrepSegmentIndex === 0) {
-                          moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                        if (assignedPlayer) {
+                          if (activeMatchPrepSegmentIndex > 0) {
+                            setPendingSegmentRemoval({
+                              segmentIndex: activeMatchPrepSegmentIndex - 1,
+                              playerOutId: assignedPlayer.player_id,
+                              slotId: slot.id,
+                            });
+                          } else {
+                            moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          }
                           setSelectedPrepPlayerId("");
                         }
                       }}
@@ -788,7 +836,10 @@ export function MatchPrepView({
                           event.dataTransfer.effectAllowed = "move";
                         }}
                         onDragEnd={() => setMatchPrepDragTarget("")}
-                        onClick={() => setSelectedPrepPlayerId((current) => current === player.player_id ? "" : player.player_id)}
+                        onClick={() => {
+                          if (planBenchPlayerForSelectedPitchPlayer(player.player_id)) return;
+                          setSelectedPrepPlayerId((current) => current === player.player_id ? "" : player.player_id);
+                        }}
                         onDoubleClick={() => moveMatchPrepPlayerOutOfSquad(player.player_id)}
                       >
                         <strong>
@@ -931,7 +982,24 @@ export function MatchPrepView({
                     Remove Segment
                   </button>
                 </div>
-                {segment.substitutions.length === 0 ? <p className="muted">No planned swaps yet.</p> : null}
+                {segment.substitutions.length === 0 && pendingSegmentRemoval?.segmentIndex !== segmentIndex ? (
+                  <p className="muted">No planned swaps yet.</p>
+                ) : null}
+                {pendingSegmentRemoval?.segmentIndex === segmentIndex ? (
+                  <div className="member-actions prep-swap-row pending">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => setPendingSegmentRemoval(null)}
+                    >
+                      Cancel
+                    </button>
+                    <span className="muted">
+                      {matchPrepPlan.players.find((player) => player.player_id === pendingSegmentRemoval.playerOutId)?.player_name ?? "Player"}
+                      {" → Select replacement"}
+                    </span>
+                  </div>
+                ) : null}
                 {segment.substitutions.map((swap, swapIndex) => (
                   <div className="member-actions prep-swap-row" key={`segment-${segmentIndex}-swap-${swapIndex}`}>
                     <button
