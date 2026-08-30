@@ -107,6 +107,7 @@ jobs:
           tags: |
             ${{ matrix.image }}:${{ github.event.release.tag_name }}
             ${{ matrix.image }}:latest
+          build-args: ${{ matrix.service == 'frontend' && format('VITE_APP_VERSION={0}', github.event.release.tag_name) || '' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to:   type=gha,mode=max,scope=${{ matrix.service }}
 

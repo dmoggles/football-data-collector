@@ -6,6 +6,8 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 COPY shared/ ../shared/
+ARG VITE_APP_VERSION
+ENV VITE_APP_VERSION=${VITE_APP_VERSION}
 RUN npm run build
 
 # Serve stage

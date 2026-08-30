@@ -1,8 +1,27 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { spawnSync } from "node:child_process";
+
+function resolveAppVersion(): string {
+  const suppliedVersion = process.env.VITE_APP_VERSION?.trim();
+  if (suppliedVersion) return suppliedVersion;
+
+  try {
+    const gitDescribe = spawnSync("git", ["describe", "--tags", "--always", "--dirty"], {
+      encoding: "utf8",
+    });
+    const gitVersion = gitDescribe.stdout.trim();
+    return gitVersion || "development";
+  } catch {
+    return "development";
+  }
+}
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(resolveAppVersion()),
+  },
   server: {
     fs: {
       allow: [".."],
