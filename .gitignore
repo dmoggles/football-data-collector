@@ -209,6 +209,7 @@ __marimo__/
 # Local uv state
 .uv-cache/
 .uv-python/
+.uv-tools/
 
 # Runtime uploaded media
 backend/uploaded_media/
