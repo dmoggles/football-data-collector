@@ -1322,6 +1322,51 @@ textarea {
   pointer-events: none;
 }
 
+.pitch-help {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 12;
+}
+
+.pitch-help-trigger {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(9, 16, 13, 0.78);
+  color: var(--tl-text);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.pitch-help-popover {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  width: min(230px, calc(100vw - 64px));
+  border: 1px solid var(--tl-border-soft);
+  border-radius: 12px;
+  background: rgba(9, 16, 13, 0.94);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38);
+  padding: 11px 12px;
+  display: grid;
+  gap: 5px;
+  color: var(--tl-text);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: left;
+  backdrop-filter: blur(10px);
+}
+
+.pitch-help-popover strong {
+  color: var(--tl-accent);
+}
+
 .pitch-slot {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -1374,6 +1419,13 @@ textarea {
   border-color: #0b6fbb;
   box-shadow: 0 0 0 2px rgba(11, 111, 187, 0.28);
   background: rgba(23, 52, 78, 0.95);
+}
+
+.pitch-slot.selected {
+  border-color: #fff;
+  outline: 3px solid var(--tl-accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px rgba(148, 239, 99, 0.18);
 }
 
 .pitch-slot-label {
@@ -2203,16 +2255,6 @@ textarea:focus-visible,
 .agenda-match { gap: 3px; min-width: 0; }
 .agenda-match strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.tap-assignment-help {
-  display: none;
-  border: 1px solid rgba(148, 239, 99, 0.28);
-  border-radius: 10px;
-  background: rgba(148, 239, 99, 0.08);
-  color: #ccefc0;
-  padding: 9px 12px;
-  font-size: 0.82rem;
-}
-
 .prep-player-tile.is-selected {
   border-color: var(--tl-accent);
   box-shadow: 0 0 0 2px rgba(148, 239, 99, 0.22);
@@ -2330,7 +2372,6 @@ textarea:focus-visible,
     padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
   }
 
-  .tap-assignment-help { display: block; }
   .pitch-card { padding: 5px; }
   .pitch-slot { min-width: 58px; min-height: 40px; padding: 2px 3px; }
   .pitch-slot.filled { width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 3px; }

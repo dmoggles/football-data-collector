@@ -38,6 +38,7 @@ export function MatchPrepView({
   const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
   const [selectedPrepPlayerId, setSelectedPrepPlayerId] = useState("");
+  const [isPitchHelpOpen, setIsPitchHelpOpen] = useState(false);
   const lastPitchTapRef = useRef<{ playerId: string; at: number } | null>(null);
   const suppressPitchClickRef = useRef(false);
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
@@ -297,6 +298,23 @@ export function MatchPrepView({
     });
   };
 
+  const swapMatchPrepPlayerSlots = (firstPlayerId: string, secondPlayerId: string) => {
+    setMatchPrepPlan((current) => {
+      if (!current) return current;
+      const firstPlayer = current.players.find((player) => player.player_id === firstPlayerId);
+      const secondPlayer = current.players.find((player) => player.player_id === secondPlayerId);
+      if (!firstPlayer?.lineup_slot || !secondPlayer?.lineup_slot) return current;
+      return {
+        ...current,
+        players: current.players.map((player) => {
+          if (player.player_id === firstPlayerId) return { ...player, lineup_slot: secondPlayer.lineup_slot };
+          if (player.player_id === secondPlayerId) return { ...player, lineup_slot: firstPlayer.lineup_slot };
+          return player;
+        }),
+      };
+    });
+  };
+
   const moveMatchPrepPlayerToBench = (playerId: string) => {
     setMatchPrepPlan((current) => {
       if (!current) return current;
@@ -546,13 +564,6 @@ export function MatchPrepView({
             Starting selected: {matchPrepPlan.players.filter((player) => player.is_starting).length}/
             {matchPrepPlan.required_starting_count} · Format {matchPrepPlan.format.replace("_", " ")}
           </p>
-          <div className="tap-assignment-help">
-            <span>
-              {selectedPrepPlayerId
-                ? "Player selected — tap a position to assign them, or double-tap them to move to the bench."
-                : "Tap a player to select them. Double-tap a player on the pitch to move them to the bench."}
-            </span>
-          </div>
           <div className="prep-layout">
             <div className="pitch-card">
               {matchPrepPlan.substitution_segments.length > 0 ? (
@@ -597,6 +608,29 @@ export function MatchPrepView({
                   assignMatchPrepPlayerToNearestSlot(event, matchPrepSlots);
                 }}
               >
+                <div className="pitch-help">
+                  <button
+                    aria-expanded={isPitchHelpOpen}
+                    aria-label="Show pitch controls"
+                    className="pitch-help-trigger"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsPitchHelpOpen((current) => !current);
+                    }}
+                    type="button"
+                  >
+                    ?
+                  </button>
+                  {isPitchHelpOpen ? (
+                    <div className="pitch-help-popover" role="tooltip">
+                      <strong>Pitch controls</strong>
+                      <span>Tap a player to select them.</span>
+                      <span>Tap another player to swap positions.</span>
+                      <span>Tap an empty position to move there.</span>
+                      <span>Double-tap a player to move them to the bench.</span>
+                    </div>
+                  ) : null}
+                </div>
                 {matchPrepSlots.map((slot) => {
                   const assignedPlayer = matchPrepPlayerBySlotId[slot.id];
                   const mismatch = assignedPlayer ? isPositionMismatch(assignedPlayer.position, slot.role) : false;
@@ -606,6 +640,8 @@ export function MatchPrepView({
                       key={slot.id}
                       type="button"
                       className={`pitch-slot ${assignedPlayer ? "filled" : "empty"} ${mismatch ? "mismatch" : ""} ${
+                        assignedPlayer?.player_id === selectedPrepPlayerId ? "selected" : ""
+                      } ${
                         matchPrepDragTarget === slot.id ? "drag-over" : ""
                       }`}
                       style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
@@ -617,6 +653,11 @@ export function MatchPrepView({
                           return;
                         }
                         if (selectedPrepPlayerId) {
+                          if (assignedPlayer && assignedPlayer.player_id !== selectedPrepPlayerId) {
+                            swapMatchPrepPlayerSlots(selectedPrepPlayerId, assignedPlayer.player_id);
+                            setSelectedPrepPlayerId("");
+                            return;
+                          }
                           assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
                           setSelectedPrepPlayerId("");
                           return;
