@@ -3,7 +3,7 @@ import hashlib
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import Session
 
 from app.api.auth_deps import get_current_user
@@ -459,8 +459,20 @@ def reset_collection_session(
             Event.team_id == payload.team_id,
         )
     )
+    other_live_session_exists = bool(
+        db.scalar(
+            select(
+                exists().where(
+                    CollectionSession.match_id == session_row.match_id,
+                    CollectionSession.id != session_row.id,
+                    CollectionSession.state == "live",
+                )
+            )
+        )
+    )
     db.delete(session_row)
-    match.status = "scheduled"
+    if not other_live_session_exists:
+        match.status = "scheduled"
     db.commit()
 
 
