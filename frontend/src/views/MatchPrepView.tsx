@@ -628,6 +628,7 @@ export function MatchPrepView({
                       <span>Tap another player to swap positions.</span>
                       <span>Tap an empty position to move there.</span>
                       <span>Double-tap a player to move them to the bench.</span>
+                      <span>On later segments, select a bench player and then the player coming off.</span>
                     </div>
                   ) : null}
                 </div>
@@ -653,6 +654,17 @@ export function MatchPrepView({
                           return;
                         }
                         if (selectedPrepPlayerId) {
+                          if (activeMatchPrepSegmentIndex > 0) {
+                            if (assignedPlayer && assignedPlayer.player_id !== selectedPrepPlayerId) {
+                              addOrReplaceMatchPrepPlannedSwap(
+                                activeMatchPrepSegmentIndex - 1,
+                                assignedPlayer.player_id,
+                                selectedPrepPlayerId,
+                              );
+                              setSelectedPrepPlayerId("");
+                            }
+                            return;
+                          }
                           if (assignedPlayer && assignedPlayer.player_id !== selectedPrepPlayerId) {
                             swapMatchPrepPlayerSlots(selectedPrepPlayerId, assignedPlayer.player_id);
                             setSelectedPrepPlayerId("");
@@ -665,7 +677,7 @@ export function MatchPrepView({
                         if (assignedPlayer) setSelectedPrepPlayerId(assignedPlayer.player_id);
                       }}
                       onPointerUp={(event) => {
-                        if (event.pointerType !== "touch" || !assignedPlayer) return;
+                        if (event.pointerType !== "touch" || !assignedPlayer || activeMatchPrepSegmentIndex > 0) return;
                         const now = Date.now();
                         const lastTap = lastPitchTapRef.current;
                         if (lastTap?.playerId === assignedPlayer.player_id && now - lastTap.at <= 350) {
@@ -679,7 +691,7 @@ export function MatchPrepView({
                         lastPitchTapRef.current = { playerId: assignedPlayer.player_id, at: now };
                       }}
                       onDoubleClick={() => {
-                        if (assignedPlayer) {
+                        if (assignedPlayer && activeMatchPrepSegmentIndex === 0) {
                           moveMatchPrepPlayerToBench(assignedPlayer.player_id);
                           setSelectedPrepPlayerId("");
                         }
