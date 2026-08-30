@@ -1337,6 +1337,7 @@ textarea {
   padding: 0.24rem 0.35rem;
   text-align: center;
   z-index: 2;
+  touch-action: manipulation;
 }
 
 .pitch-slot.filled {
@@ -2212,13 +2213,6 @@ textarea:focus-visible,
   font-size: 0.82rem;
 }
 
-.tap-assignment-help .button {
-  min-height: 38px;
-  margin-left: auto;
-  padding-block: 5px;
-  white-space: nowrap;
-}
-
 .prep-player-tile.is-selected {
   border-color: var(--tl-accent);
   box-shadow: 0 0 0 2px rgba(148, 239, 99, 0.22);
@@ -2336,7 +2330,7 @@ textarea:focus-visible,
     padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
   }
 
-  .tap-assignment-help { display: flex; align-items: center; gap: 10px; }
+  .tap-assignment-help { display: block; }
   .pitch-card { padding: 5px; }
   .pitch-slot { min-width: 58px; min-height: 40px; padding: 2px 3px; }
   .pitch-slot.filled { width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 3px; }

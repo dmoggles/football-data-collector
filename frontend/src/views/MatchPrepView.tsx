@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { createCoachingNote, deleteCoachingNote, getMatchPrepPlan, listCoachingNotes, upsertMatchPrepPlan } from "../api";
 import { PitchDiagram } from "../components/PitchDiagram";
@@ -38,6 +38,8 @@ export function MatchPrepView({
   const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
   const [selectedPrepPlayerId, setSelectedPrepPlayerId] = useState("");
+  const lastPitchTapRef = useRef<{ playerId: string; at: number } | null>(null);
+  const suppressPitchClickRef = useRef(false);
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
   const [isCoachingNoteComposerOpen, setIsCoachingNoteComposerOpen] = useState(false);
   const [coachingNotePlayerId, setCoachingNotePlayerId] = useState("__team__");
@@ -140,10 +142,6 @@ export function MatchPrepView({
     }
     return mapping;
   }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan]);
-  const selectedPrepPlayerIsOnPitch = useMemo(
-    () => Object.values(matchPrepPlayerBySlotId).some((player) => player.player_id === selectedPrepPlayerId),
-    [matchPrepPlayerBySlotId, selectedPrepPlayerId],
-  );
   const matchPrepBenchPlayers = useMemo(
     () => (matchPrepPlan ? matchPrepPlan.players.filter((p) => p.is_available && !p.lineup_slot) : []),
     [matchPrepPlan],
@@ -551,21 +549,9 @@ export function MatchPrepView({
           <div className="tap-assignment-help">
             <span>
               {selectedPrepPlayerId
-                ? "Player selected — tap a position to assign them."
-                : "Tap a player or occupied position, then choose their destination."}
+                ? "Player selected — tap a position to assign them, or double-tap them to move to the bench."
+                : "Tap a player to select them. Double-tap a player on the pitch to move them to the bench."}
             </span>
-            {selectedPrepPlayerIsOnPitch ? (
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => {
-                  moveMatchPrepPlayerToBench(selectedPrepPlayerId);
-                  setSelectedPrepPlayerId("");
-                }}
-              >
-                Move to bench
-              </button>
-            ) : null}
           </div>
           <div className="prep-layout">
             <div className="pitch-card">
@@ -626,6 +612,10 @@ export function MatchPrepView({
                       aria-label={assignedPlayer ? `${assignedPlayer.player_name}${assignedPlayer.shirt_number ? `, number ${assignedPlayer.shirt_number}` : ""}` : `Assign player to ${slot.label}`}
                       title={assignedPlayer ? `${assignedPlayer.player_name}${assignedPlayerNote ? ` — ${assignedPlayerNote.note_text}` : ""}` : slot.label}
                       onClick={() => {
+                        if (suppressPitchClickRef.current) {
+                          suppressPitchClickRef.current = false;
+                          return;
+                        }
                         if (selectedPrepPlayerId) {
                           assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
                           setSelectedPrepPlayerId("");
@@ -633,8 +623,25 @@ export function MatchPrepView({
                         }
                         if (assignedPlayer) setSelectedPrepPlayerId(assignedPlayer.player_id);
                       }}
+                      onPointerUp={(event) => {
+                        if (event.pointerType !== "touch" || !assignedPlayer) return;
+                        const now = Date.now();
+                        const lastTap = lastPitchTapRef.current;
+                        if (lastTap?.playerId === assignedPlayer.player_id && now - lastTap.at <= 350) {
+                          event.preventDefault();
+                          suppressPitchClickRef.current = true;
+                          lastPitchTapRef.current = null;
+                          moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          setSelectedPrepPlayerId("");
+                          return;
+                        }
+                        lastPitchTapRef.current = { playerId: assignedPlayer.player_id, at: now };
+                      }}
                       onDoubleClick={() => {
-                        if (assignedPlayer) moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                        if (assignedPlayer) {
+                          moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          setSelectedPrepPlayerId("");
+                        }
                       }}
                       onDragEnter={(event) => { event.preventDefault(); setMatchPrepDragTarget(slot.id); }}
                       onDragOver={(event) => { event.preventDefault(); setMatchPrepDragTarget(slot.id); }}
