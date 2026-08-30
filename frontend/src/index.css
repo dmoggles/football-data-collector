@@ -2065,9 +2065,22 @@ textarea:focus-visible,
 .team-context-control select {
   min-height: 40px;
   padding: 6px 34px 6px 10px;
-  border: 0;
-  background-color: transparent;
+  border: 1px solid var(--tl-border-soft);
+  border-radius: 10px;
+  background-color: var(--tl-surface-2);
+  color: var(--tl-text);
+  color-scheme: dark;
   font-weight: 700;
+}
+
+.team-context-control select:hover {
+  border-color: var(--tl-accent-strong);
+  background-color: var(--tl-surface-3);
+}
+
+.team-context-control select option {
+  background: var(--tl-surface-2);
+  color: var(--tl-text);
 }
 
 .context-status {
