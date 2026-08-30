@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { createFixture, deleteFixture, updateFixture } from "../api";
 import { SearchableSelect } from "../components/SearchableSelect";
+import { CreatableTeamSelect } from "../components/CreatableTeamSelect";
 import {
   CALENDAR_WEEKDAY_LABELS,
   FIXTURE_STATUS_OPTIONS,
@@ -35,6 +36,7 @@ export function FixturesView({
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [fixtureOpponentTeamId, setFixtureOpponentTeamId] = useState("");
+  const [fixtureOpponentTeamName, setFixtureOpponentTeamName] = useState("");
   const [fixtureFormat, setFixtureFormat] = useState<MatchFormat>("11_aside");
   const [fixturePeriodFormat, setFixturePeriodFormat] = useState<MatchPeriodFormat>("halves");
   const [fixturePeriodLengthMinutes, setFixturePeriodLengthMinutes] = useState("35");
@@ -123,6 +125,7 @@ export function FixturesView({
     setFixtureKickoffTime("");
     setFixtureStatus("scheduled");
     setFixtureOpponentTeamId("");
+    setFixtureOpponentTeamName("");
     setIsFixtureComposerOpen(false);
   };
 
@@ -134,6 +137,7 @@ export function FixturesView({
     setFixtureVenue("home");
     setFixtureStatus("scheduled");
     setFixtureOpponentTeamId("");
+    setFixtureOpponentTeamName("");
     if (date) {
       setFixtureKickoffDate(toLocalDateKey(date));
       setFixtureKickoffTime("18:00");
@@ -149,6 +153,9 @@ export function FixturesView({
     const selectedTeamIsHome = fixture.home_team_id === selectedTeamId;
     setFixtureVenue(selectedTeamIsHome ? "home" : "away");
     setFixtureOpponentTeamId(selectedTeamIsHome ? fixture.away_team_id : fixture.home_team_id);
+    setFixtureOpponentTeamName(selectedTeamIsHome
+      ? [fixture.away_club_name, fixture.away_team_name].filter(Boolean).join(" ")
+      : [fixture.home_club_name, fixture.home_team_name].filter(Boolean).join(" "));
     setFixtureFormat(fixture.format);
     setFixturePeriodFormat(fixture.period_format as MatchPeriodFormat);
     setFixturePeriodLengthMinutes(String(fixture.period_length_minutes));
@@ -174,13 +181,23 @@ export function FixturesView({
       setError("Select one of your teams first");
       return;
     }
-    if (!fixtureOpponentTeamId) {
-      setError("Please select a valid opposition team from the list");
+    if (!fixtureOpponentTeamId && !fixtureOpponentTeamName.trim()) {
+      setError("Select or type an opposition team");
       return;
     }
     if (selectedTeamId === fixtureOpponentTeamId) {
       setError("Opposition team must be different");
       return;
+    }
+    if (!fixtureOpponentTeamId) {
+      const normalizedName = fixtureOpponentTeamName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const typedTokens = new Set(normalizedName.split(" "));
+      const hasCloseMatch = fixtureOppositionOptions.some((team) => {
+        const candidateTokens = new Set(team.display_name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" "));
+        const overlap = [...typedTokens].filter((token) => candidateTokens.has(token)).length;
+        return overlap / Math.max(typedTokens.size, candidateTokens.size, 1) >= 0.5;
+      });
+      if (hasCloseMatch && !window.confirm("A similar team exists. Create a new unclaimed team anyway?")) return;
     }
     if (fixtureKickoffDate && !fixtureKickoffTime) {
       setError("Select a kickoff time in 15-minute increments");
@@ -197,9 +214,14 @@ export function FixturesView({
       const kickoffAt = fixtureKickoffDate
         ? new Date(`${fixtureKickoffDate}T${fixtureKickoffTime}`).toISOString()
         : null;
+      const oppositionReference = fixtureOpponentTeamId
+        ? { id: fixtureOpponentTeamId, name: null }
+        : { id: null, name: fixtureOpponentTeamName.trim() };
       const payload = {
-        home_team_id: fixtureVenue === "home" ? selectedTeamId : fixtureOpponentTeamId,
-        away_team_id: fixtureVenue === "home" ? fixtureOpponentTeamId : selectedTeamId,
+        home_team_id: fixtureVenue === "home" ? selectedTeamId : oppositionReference.id,
+        home_team_name: fixtureVenue === "home" ? null : oppositionReference.name,
+        away_team_id: fixtureVenue === "home" ? oppositionReference.id : selectedTeamId,
+        away_team_name: fixtureVenue === "home" ? oppositionReference.name : null,
         format: fixtureFormat,
         period_format: fixturePeriodFormat,
         period_length_minutes: parsedPeriodLength,
@@ -322,10 +344,10 @@ export function FixturesView({
                   <span className="calendar-date">{date.getDate()}</span>
                   <div className="calendar-fixtures">
                     {dayFixtures.map((fixture) => {
-                      const oppositionName =
+                      const oppositionName = (
                         fixture.home_team_id === selectedTeamId
                           ? `${fixture.away_club_name} ${fixture.away_team_name}`
-                          : `${fixture.home_club_name} ${fixture.home_team_name}`;
+                          : `${fixture.home_club_name} ${fixture.home_team_name}`).trim();
                       const venueLabel = fixture.home_team_id === selectedTeamId ? "H" : "A";
                       return (
                         <button
@@ -389,14 +411,11 @@ export function FixturesView({
                 Away
               </button>
             </div>
-            <SearchableSelect
-              value={fixtureOpponentTeamId}
-              onChange={(nextValue) => setFixtureOpponentTeamId(nextValue)}
-              options={fixtureOppositionOptions.map((team) => ({
-                value: team.id,
-                label: team.display_name,
-              }))}
-              placeholder="Select opposition team"
+            <CreatableTeamSelect
+              teams={fixtureOppositionOptions}
+              selectedId={fixtureOpponentTeamId}
+              typedName={fixtureOpponentTeamName}
+              onChange={(id, name) => { setFixtureOpponentTeamId(id); setFixtureOpponentTeamName(name); }}
             />
             <select
               value={fixtureFormat}
@@ -470,7 +489,7 @@ export function FixturesView({
             <div className="member-actions">
               <button
                 className="button primary"
-                disabled={isSubmitting || !selectedTeamId || !fixtureOpponentTeamId}
+                disabled={isSubmitting || !selectedTeamId || (!fixtureOpponentTeamId && !fixtureOpponentTeamName.trim())}
                 type="submit"
               >
                 {editingFixtureId ? "Save Fixture" : "Create Fixture"}

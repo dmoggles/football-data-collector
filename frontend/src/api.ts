@@ -2,6 +2,7 @@ import type {
   AdminAuditLogEntry,
   AdminClubOverview,
   AdminOverview,
+  AdminTeamMergeCandidate,
   CoachingNote,
   CollectionEvent,
   CollectionSession,
@@ -98,7 +99,7 @@ async function request<TResponse>(
 function toTeam(team: TeamApiResponse): Team {
   return {
     ...team,
-    display_name: `${team.club_name} ${team.team_name}`,
+    display_name: [team.club_name, team.team_name].filter(Boolean).join(" "),
   };
 }
 
@@ -138,7 +139,7 @@ export async function listTeamDirectory(): Promise<TeamDirectory[]> {
   const teams = await request<TeamDirectoryApiResponse[]>("/teams/directory", "GET");
   return teams.map((team) => ({
     ...team,
-    display_name: `${team.club_name} ${team.team_name}`,
+    display_name: [team.club_name, team.team_name].filter(Boolean).join(" "),
   }));
 }
 
@@ -421,6 +422,21 @@ export async function deleteAdminTeam(teamId: string): Promise<void> {
 
 export async function removeAdminTeamOwner(teamId: string, userId: string): Promise<void> {
   await request<void>(`/admin/teams/${teamId}/admins/${userId}`, "DELETE");
+}
+
+export async function claimAdminTeam(
+  teamId: string,
+  payload: { team_name: string; club_id?: string; new_club_name?: string },
+): Promise<void> {
+  await request(`/admin/teams/${teamId}/claim`, "POST", payload);
+}
+
+export async function mergeAdminTeam(teamId: string, targetTeamId: string): Promise<void> {
+  await request(`/admin/teams/${teamId}/merge`, "POST", { target_team_id: targetTeamId });
+}
+
+export async function listAdminTeamMergeCandidates(teamId: string): Promise<AdminTeamMergeCandidate[]> {
+  return request<AdminTeamMergeCandidate[]>(`/admin/teams/${teamId}/merge-candidates`, "GET");
 }
 
 export async function assignUserGlobalRole(userId: string, role: GlobalRole): Promise<void> {

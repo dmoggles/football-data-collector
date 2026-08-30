@@ -50,7 +50,7 @@ def build_team_member_response(db: Session, membership: TeamMembership) -> TeamM
 
 def build_team_response(
     team: Team,
-    club_name: str,
+    club_name: str | None,
     club_logo_filename: str | None,
     my_role: str,
 ) -> TeamResponse:
@@ -61,11 +61,12 @@ def build_team_response(
         club_logo_url=build_club_logo_url(club_logo_filename),
         team_name=team.name,
         my_role=my_role,
+        is_unclaimed=team.club_id is None,
     )
 
 
 def build_team_directory_response(
-    team: Team, club_name: str, club_logo_filename: str | None
+    team: Team, club_name: str | None, club_logo_filename: str | None
 ) -> TeamDirectoryResponse:
     return TeamDirectoryResponse(
         id=team.id,
@@ -73,6 +74,7 @@ def build_team_directory_response(
         club_name=club_name,
         club_logo_url=build_club_logo_url(club_logo_filename),
         team_name=team.name,
+        is_unclaimed=team.club_id is None,
     )
 
 
@@ -94,7 +96,7 @@ def list_teams(
 ) -> list[TeamResponse]:
     query = (
         select(Team, Club.name, Club.logo_filename, TeamMembership.role)
-        .join(Club, Club.id == Team.club_id)
+        .outerjoin(Club, Club.id == Team.club_id)
         .join(TeamMembership, TeamMembership.team_id == Team.id)
         .where(TeamMembership.user_id == user.id)
         .order_by(Club.name.asc(), Team.name.asc())
@@ -113,8 +115,8 @@ def list_team_directory(
 ) -> list[TeamDirectoryResponse]:
     query = (
         select(Team, Club.name, Club.logo_filename)
-        .join(Club, Club.id == Team.club_id)
-        .order_by(Club.name.asc(), Team.name.asc())
+        .outerjoin(Club, Club.id == Team.club_id)
+        .order_by(Team.club_id.is_(None), Club.name.asc(), Team.name.asc())
     )
     rows = db.execute(query).all()
     return [
@@ -147,7 +149,9 @@ def create_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name, club.logo_filename, normalize_team_role(membership.role))
+    return build_team_response(
+        team, club.name, club.logo_filename, normalize_team_role(membership.role)
+    )
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
@@ -174,7 +178,9 @@ def update_team(
         ) from exc
 
     db.refresh(team)
-    return build_team_response(team, club.name, club.logo_filename, normalize_team_role(acting_membership.role))
+    return build_team_response(
+        team, club.name, club.logo_filename, normalize_team_role(acting_membership.role)
+    )
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -258,7 +264,8 @@ def update_team_member(
 
     if (
         membership.role in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
-        and payload.role.value not in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
+        and payload.role.value
+        not in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
         and count_team_admins(db, team_id) <= 1
     ):
         raise HTTPException(
@@ -266,10 +273,11 @@ def update_team_member(
             detail="Team must have at least one manager",
         )
 
-    if (
-        membership.user_id == acting_membership.user_id
-        and payload.role.value not in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
-    ):
+    if membership.user_id == acting_membership.user_id and payload.role.value not in [
+        TeamRole.MANAGER.value,
+        TeamRole.TEAM_ADMIN.value,
+        TeamRole.ADMIN.value,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot demote yourself",
@@ -296,9 +304,10 @@ def delete_team_member(
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
 
-    if membership.role in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value] and count_team_admins(
-        db, team_id
-    ) <= 1:
+    if (
+        membership.role in [TeamRole.MANAGER.value, TeamRole.TEAM_ADMIN.value, TeamRole.ADMIN.value]
+        and count_team_admins(db, team_id) <= 1
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Team must have at least one manager",

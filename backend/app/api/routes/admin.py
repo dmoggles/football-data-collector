@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.club_logos import CLUB_LOGOS_DIR, build_club_logo_url
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.club import Club
 from app.models.global_role import GlobalRole, GlobalRoleType
+from app.models.match import Match
 from app.models.player import Player
 from app.models.team import Team
 from app.models.team_membership import (
@@ -23,7 +24,10 @@ from app.schemas.admin import (
     AdminAuditLogEntry,
     AdminClubOverview,
     AdminOverviewResponse,
+    AdminTeamClaimRequest,
     AdminTeamCreateRequest,
+    AdminTeamMergeCandidate,
+    AdminTeamMergeRequest,
     AdminTeamOverview,
     AdminTeamOwnerOverview,
     AdminTeamUpdateRequest,
@@ -34,6 +38,7 @@ from app.schemas.admin import (
     GlobalRoleAssignRequest,
 )
 from app.schemas.team import TeamMemberResponse
+from app.services.team_names import fuzzy_team_name_score, team_display_name
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -93,9 +98,9 @@ def build_audit_log_response(db: Session, row: AdminAuditLog) -> AdminAuditLogEn
 def count_super_admins(db: Session) -> int:
     return int(
         db.scalar(
-            select(func.count()).select_from(GlobalRole).where(
-                GlobalRole.role == GlobalRoleType.SUPER_ADMIN.value
-            )
+            select(func.count())
+            .select_from(GlobalRole)
+            .where(GlobalRole.role == GlobalRoleType.SUPER_ADMIN.value)
         )
         or 0
     )
@@ -133,8 +138,8 @@ def get_admin_overview(
 
     teams_rows = db.execute(
         select(Team.id, Team.club_id, Team.name, Club.name)
-        .join(Club, Club.id == Team.club_id)
-        .order_by(Club.name.asc(), Team.name.asc())
+        .outerjoin(Club, Club.id == Team.club_id)
+        .order_by(Team.club_id.is_(None), Club.name.asc(), Team.name.asc())
     ).all()
     owner_rows = db.execute(
         select(TeamMembership.team_id, TeamMembership.user_id, TeamMembership.role, User.email)
@@ -159,6 +164,7 @@ def get_admin_overview(
             club_id=club_id,
             club_name=club_name,
             team_name=team_name,
+            is_unclaimed=club_id is None,
             owners=owners_by_team.get(team_id, []),
         )
         for team_id, club_id, team_name, club_name in teams_rows
@@ -361,7 +367,11 @@ def assign_team_admin(
     db: Session = Depends(get_db),
     super_admin: User = Depends(require_super_admin),
 ) -> TeamMemberResponse:
-    get_team_or_404(db, team_id)
+    team = get_team_or_404(db, team_id)
+    if team.club_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Claim this team before assigning managers"
+        )
     target_email = payload.user_email.strip().lower()
     target_user = db.scalar(select(User).where(User.email == target_email))
     if not target_user:
@@ -504,6 +514,157 @@ def update_team(
     )
     db.commit()
     return {"id": team.id, "club_id": team.club_id, "team_name": team.name}
+
+
+@router.post("/teams/{team_id}/claim")
+def claim_team(
+    team_id: str,
+    payload: AdminTeamClaimRequest,
+    db: Session = Depends(get_db),
+    super_admin: User = Depends(require_super_admin),
+) -> dict[str, str]:
+    team = get_team_or_404(db, team_id)
+    if team.club_id is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team is already claimed")
+    if (payload.club_id is None) == (payload.new_club_name is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide exactly one existing club or new club name",
+        )
+
+    if payload.club_id:
+        club = db.scalar(select(Club).where(Club.id == payload.club_id))
+        if not club:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Club not found")
+    else:
+        club = Club(name=payload.new_club_name.strip())  # type: ignore[union-attr]
+        db.add(club)
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Club already exists"
+            ) from exc
+        write_audit_log(
+            db,
+            super_admin.id,
+            "create_club_inline",
+            "club",
+            club.id,
+            {"club_name": club.name, "team_id": team_id},
+        )
+
+    team.club_id = club.id
+    team.name = payload.team_name.strip()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Team already exists for this club"
+        ) from exc
+    write_audit_log(
+        db,
+        super_admin.id,
+        "claim_unclaimed_team",
+        "team",
+        team.id,
+        {"club_id": club.id, "team_name": team.name},
+    )
+    db.commit()
+    return {"id": team.id, "club_id": club.id, "team_name": team.name}
+
+
+@router.post("/teams/{team_id}/merge")
+def merge_team(
+    team_id: str,
+    payload: AdminTeamMergeRequest,
+    db: Session = Depends(get_db),
+    super_admin: User = Depends(require_super_admin),
+) -> dict[str, str | int]:
+    source = get_team_or_404(db, team_id)
+    if source.club_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Only unclaimed teams can be merged"
+        )
+    target = get_team_or_404(db, payload.target_team_id)
+    if target.club_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Merge target must be a claimed team"
+        )
+    self_fixture = db.scalar(
+        select(Match.id)
+        .where(
+            or_(
+                (Match.home_team_id == source.id) & (Match.away_team_id == target.id),
+                (Match.home_team_id == target.id) & (Match.away_team_id == source.id),
+            )
+        )
+        .limit(1)
+    )
+    if self_fixture:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Merge would create a fixture with the same team on both sides",
+        )
+
+    home_count = int(
+        db.scalar(select(func.count()).select_from(Match).where(Match.home_team_id == source.id))
+        or 0
+    )
+    away_count = int(
+        db.scalar(select(func.count()).select_from(Match).where(Match.away_team_id == source.id))
+        or 0
+    )
+    db.execute(update(Match).where(Match.home_team_id == source.id).values(home_team_id=target.id))
+    db.execute(update(Match).where(Match.away_team_id == source.id).values(away_team_id=target.id))
+    moved_count = home_count + away_count
+    write_audit_log(
+        db,
+        super_admin.id,
+        "merge_unclaimed_team",
+        "team",
+        source.id,
+        {
+            "source_team_id": source.id,
+            "target_team_id": target.id,
+            "moved_fixture_count": moved_count,
+        },
+    )
+    db.delete(source)
+    db.commit()
+    return {
+        "source_team_id": team_id,
+        "target_team_id": target.id,
+        "moved_fixture_count": moved_count,
+    }
+
+
+@router.get("/teams/{team_id}/merge-candidates", response_model=list[AdminTeamMergeCandidate])
+def get_merge_candidates(
+    team_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+) -> list[AdminTeamMergeCandidate]:
+    source = get_team_or_404(db, team_id)
+    if source.club_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only unclaimed teams have merge candidates",
+        )
+    rows = db.execute(
+        select(Team, Club.name).join(Club, Club.id == Team.club_id).where(Team.id != source.id)
+    ).all()
+    candidates = [
+        AdminTeamMergeCandidate(
+            team_id=team.id,
+            display_name=team_display_name(team, club_name),
+            score=fuzzy_team_name_score(source.name, team_display_name(team, club_name)),
+        )
+        for team, club_name in rows
+    ]
+    return sorted(candidates, key=lambda candidate: (-candidate.score, candidate.display_name))[:20]
 
 
 @router.delete("/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)

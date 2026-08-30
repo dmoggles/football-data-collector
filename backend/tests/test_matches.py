@@ -200,3 +200,104 @@ def test_team_admin_can_update_and_delete_fixture() -> None:
 
     delete_response = client.delete(f"/matches/{fixture_id}")
     assert delete_response.status_code == 204
+
+
+def test_unclaimed_fixture_can_be_ranked_and_merged_into_canonical_team() -> None:
+    suffix = uuid.uuid4().hex[:6]
+    club_name = f"New Club {suffix}"
+    _create_club(club_name)
+    owner_email, owner_password = _register("unclaimed-merge-owner")
+    _grant_super_admin(owner_email)
+    _login(owner_email, owner_password)
+
+    managed_response = client.post(
+        "/teams",
+        json={"club_name": club_name, "team_name": f"Managed {suffix}"},
+    )
+    canonical_response = client.post(
+        "/teams",
+        json={"club_name": club_name, "team_name": "Bengals"},
+    )
+    assert managed_response.status_code == 201
+    assert canonical_response.status_code == 201
+    managed_id = managed_response.json()["id"]
+    canonical_id = canonical_response.json()["id"]
+
+    source_name = f"NewClub {suffix} U12 Bengals"
+    fixture_response = client.post(
+        "/matches",
+        json={
+            "home_team_id": managed_id,
+            "away_team_name": source_name,
+            "format": "11_aside",
+            "period_format": "halves",
+            "period_length_minutes": 35,
+            "status": "scheduled",
+        },
+    )
+    assert fixture_response.status_code == 201
+    fixture = fixture_response.json()
+    source_id = fixture["away_team_id"]
+    assert fixture["away_club_name"] == ""
+
+    list_response = client.get(f"/matches?team_id={managed_id}")
+    assert list_response.status_code == 200
+    assert any(row["id"] == fixture["id"] for row in list_response.json())
+
+    directory_response = client.get("/teams/directory")
+    assert directory_response.status_code == 200
+    source_directory_row = next(row for row in directory_response.json() if row["id"] == source_id)
+    assert source_directory_row["is_unclaimed"] is True
+    assert source_directory_row["club_id"] is None
+
+    candidates_response = client.get(f"/admin/teams/{source_id}/merge-candidates")
+    assert candidates_response.status_code == 200
+    candidates = candidates_response.json()
+    canonical_candidate = next(row for row in candidates if row["team_id"] == canonical_id)
+    assert canonical_candidate["score"] == 100.0
+    assert candidates[0]["team_id"] == canonical_id
+
+    merge_response = client.post(
+        f"/admin/teams/{source_id}/merge",
+        json={"target_team_id": canonical_id},
+    )
+    assert merge_response.status_code == 200
+    assert merge_response.json()["moved_fixture_count"] == 1
+
+    merged_list_response = client.get(f"/matches?team_id={managed_id}")
+    assert merged_list_response.status_code == 200
+    merged_fixture = next(row for row in merged_list_response.json() if row["id"] == fixture["id"])
+    assert merged_fixture["away_team_id"] == canonical_id
+    assert merged_fixture["away_club_name"] == club_name
+
+
+def test_typed_exact_composite_name_reuses_canonical_team() -> None:
+    suffix = uuid.uuid4().hex[:6]
+    club_name = f"Exact Club {suffix}"
+    _create_club(club_name)
+    owner_email, owner_password = _register("exact-team-owner")
+    _login(owner_email, owner_password)
+    managed_response = client.post(
+        "/teams",
+        json={"club_name": club_name, "team_name": "Managed"},
+    )
+    canonical_response = client.post(
+        "/teams",
+        json={"club_name": club_name, "team_name": "Bengals"},
+    )
+    assert managed_response.status_code == 201
+    assert canonical_response.status_code == 201
+
+    fixture_response = client.post(
+        "/matches",
+        json={
+            "home_team_id": managed_response.json()["id"],
+            "away_team_name": f"  exact   club {suffix} -- BENGALS ",
+            "format": "7_aside",
+            "period_format": "halves",
+            "period_length_minutes": 30,
+            "status": "scheduled",
+        },
+    )
+    assert fixture_response.status_code == 201
+    assert fixture_response.json()["away_team_id"] == canonical_response.json()["id"]

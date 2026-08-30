@@ -47,10 +47,27 @@ class AdminTeamOwnerOverview(BaseModel):
 
 class AdminTeamOverview(BaseModel):
     id: str
-    club_id: str
-    club_name: str
+    club_id: str | None
+    club_name: str | None
     team_name: str
+    is_unclaimed: bool
     owners: list[AdminTeamOwnerOverview]
+
+
+class AdminTeamClaimRequest(BaseModel):
+    team_name: str = Field(min_length=1, max_length=120)
+    club_id: str | None = Field(default=None, min_length=1, max_length=36)
+    new_club_name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class AdminTeamMergeRequest(BaseModel):
+    target_team_id: str = Field(min_length=1, max_length=36)
+
+
+class AdminTeamMergeCandidate(BaseModel):
+    team_id: str
+    display_name: str
+    score: float
 
 
 class AdminOverviewResponse(BaseModel):

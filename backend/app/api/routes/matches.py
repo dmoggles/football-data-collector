@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, delete, exists, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.api.auth_deps import get_current_user
 from app.api.deps import get_db
-from app.api.entitlements import ensure_team_admin, get_team_or_404
+from app.api.entitlements import get_team_or_404
+from app.models.admin_audit_log import AdminAuditLog
 from app.models.club import Club
 from app.models.coaching_note import CoachingNote
 from app.models.event import Event
@@ -18,6 +19,7 @@ from app.models.team import Team
 from app.models.team_membership import TeamMembership, is_team_admin_role
 from app.models.user import User
 from app.schemas.match import MatchCreateRequest, MatchResponse, MatchUpdateRequest
+from app.services.team_names import find_exact_teams
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -25,19 +27,19 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 def build_match_response(
     match: Match,
     home_team_name: str,
-    home_club_name: str,
+    home_club_name: str | None,
     away_team_name: str,
-    away_club_name: str,
+    away_club_name: str | None,
     can_manage: bool,
 ) -> MatchResponse:
     return MatchResponse(
         id=match.id,
         home_team_id=match.home_team_id,
         home_team_name=home_team_name,
-        home_club_name=home_club_name,
+        home_club_name=home_club_name or "",
         away_team_id=match.away_team_id,
         away_team_name=away_team_name,
-        away_club_name=away_club_name,
+        away_club_name=away_club_name or "",
         format=match.format,
         period_format=match.period_format,
         period_length_minutes=match.period_length_minutes,
@@ -56,15 +58,17 @@ def get_match_or_404(db: Session, match_id: str) -> Match:
 
 def ensure_fixture_view_access(db: Session, match: Match, user_id: str) -> None:
     has_access = db.scalar(
-        select(exists().where(
-            and_(
-                TeamMembership.user_id == user_id,
-                or_(
-                    TeamMembership.team_id == match.home_team_id,
-                    TeamMembership.team_id == match.away_team_id,
-                ),
+        select(
+            exists().where(
+                and_(
+                    TeamMembership.user_id == user_id,
+                    or_(
+                        TeamMembership.team_id == match.home_team_id,
+                        TeamMembership.team_id == match.away_team_id,
+                    ),
+                )
             )
-        ))
+        )
     )
     if not bool(has_access):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -90,11 +94,16 @@ def ensure_fixture_manage_access(db: Session, match: Match, user_id: str) -> Non
             TeamMembership.team_id == match.away_team_id,
         )
     )
-    if not bool((home_role and is_team_admin_role(home_role)) or (away_role and is_team_admin_role(away_role))):
+    if not bool(
+        (home_role and is_team_admin_role(home_role))
+        or (away_role and is_team_admin_role(away_role))
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
 
 
-def ensure_fixture_create_access(db: Session, home_team_id: str, away_team_id: str, user_id: str) -> None:
+def ensure_fixture_create_access(
+    db: Session, home_team_id: str, away_team_id: str, user_id: str
+) -> None:
     home_role = db.scalar(
         select(TeamMembership.role).where(
             TeamMembership.user_id == user_id,
@@ -107,7 +116,10 @@ def ensure_fixture_create_access(db: Session, home_team_id: str, away_team_id: s
             TeamMembership.team_id == away_team_id,
         )
     )
-    if not bool((home_role and is_team_admin_role(home_role)) or (away_role and is_team_admin_role(away_role))):
+    if not bool(
+        (home_role and is_team_admin_role(home_role))
+        or (away_role and is_team_admin_role(away_role))
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
 
 
@@ -132,9 +144,9 @@ def list_matches(
             away_club.name,
         )
         .join(home_team, home_team.id == Match.home_team_id)
-        .join(home_club, home_club.id == home_team.club_id)
+        .outerjoin(home_club, home_club.id == home_team.club_id)
         .join(away_team, away_team.id == Match.away_team_id)
-        .join(away_club, away_club.id == away_team.club_id)
+        .outerjoin(away_club, away_club.id == away_team.club_id)
         # MySQL doesn't support "NULLS LAST"; emulate it by sorting null kickoff rows last.
         .order_by(Match.kickoff_at.is_(None), Match.kickoff_at.asc(), Match.created_at.desc())
     )
@@ -184,23 +196,48 @@ def create_match(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> MatchResponse:
-    if payload.home_team_id == payload.away_team_id:
+    def resolve(team_id: str | None, team_name: str | None) -> Team:
+        if team_id:
+            return get_team_or_404(db, team_id)
+        assert team_name is not None
+        exact = find_exact_teams(db, team_name)
+        if len(exact) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ambiguous exact team match; select a team",
+            )
+        if exact:
+            return exact[0]
+        team = Team(name=team_name.strip(), club_id=None)
+        db.add(team)
+        db.flush()
+        db.add(
+            AdminAuditLog(
+                actor_user_id=user.id,
+                action="create_unclaimed_team",
+                target_type="team",
+                target_id=team.id,
+                metadata_json={"team_name": team.name},
+            )
+        )
+        return team
+
+    home_team_record = resolve(payload.home_team_id, payload.home_team_name)
+    away_team_record = resolve(payload.away_team_id, payload.away_team_name)
+    ensure_fixture_create_access(db, home_team_record.id, away_team_record.id, user.id)
+    if home_team_record.id == away_team_record.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Home and away teams must differ",
         )
-
-    ensure_fixture_create_access(db, payload.home_team_id, payload.away_team_id, user.id)
-    home_team_record = get_team_or_404(db, payload.home_team_id)
-    away_team_record = get_team_or_404(db, payload.away_team_id)
 
     home_club_name = db.scalar(select(Club.name).where(Club.id == home_team_record.club_id)) or ""
     away_club_name = db.scalar(select(Club.name).where(Club.id == away_team_record.club_id)) or ""
 
     fixture = Match(
         user_id=user.id,
-        home_team_id=payload.home_team_id,
-        away_team_id=payload.away_team_id,
+        home_team_id=home_team_record.id,
+        away_team_id=away_team_record.id,
         format=payload.format.value,
         period_format=payload.period_format.value,
         period_length_minutes=payload.period_length_minutes,
@@ -227,28 +264,63 @@ def update_match(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> MatchResponse:
-    if payload.home_team_id == payload.away_team_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Home and away teams must differ",
-        )
-
     fixture = get_match_or_404(db, match_id)
     ensure_fixture_manage_access(db, fixture, user.id)
-    ensure_team_admin(db, payload.home_team_id, user.id)
 
-    home_team_record = get_team_or_404(db, payload.home_team_id)
-    away_team_record = get_team_or_404(db, payload.away_team_id)
+    def resolve(team_id: str | None, team_name: str | None) -> Team:
+        if team_id:
+            return get_team_or_404(db, team_id)
+        assert team_name is not None
+        exact = find_exact_teams(db, team_name)
+        if len(exact) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ambiguous exact team match; select a team",
+            )
+        if exact:
+            return exact[0]
+        team = Team(name=team_name.strip(), club_id=None)
+        db.add(team)
+        db.flush()
+        db.add(
+            AdminAuditLog(
+                actor_user_id=user.id,
+                action="create_unclaimed_team",
+                target_type="team",
+                target_id=team.id,
+                metadata_json={"team_name": team.name},
+            )
+        )
+        return team
+
+    old_team_ids = {fixture.home_team_id, fixture.away_team_id}
+    home_team_record = resolve(payload.home_team_id, payload.home_team_name)
+    away_team_record = resolve(payload.away_team_id, payload.away_team_name)
+    ensure_fixture_create_access(db, home_team_record.id, away_team_record.id, user.id)
+    if home_team_record.id == away_team_record.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Home and away teams must differ"
+        )
     home_club_name = db.scalar(select(Club.name).where(Club.id == home_team_record.club_id)) or ""
     away_club_name = db.scalar(select(Club.name).where(Club.id == away_team_record.club_id)) or ""
 
-    fixture.home_team_id = payload.home_team_id
-    fixture.away_team_id = payload.away_team_id
+    fixture.home_team_id = home_team_record.id
+    fixture.away_team_id = away_team_record.id
     fixture.format = payload.format.value
     fixture.period_format = payload.period_format.value
     fixture.period_length_minutes = payload.period_length_minutes
     fixture.kickoff_at = payload.kickoff_at
     fixture.status = payload.status.strip()
+    db.flush()
+    for old_id in old_team_ids - {fixture.home_team_id, fixture.away_team_id}:
+        old_team = db.scalar(select(Team).where(Team.id == old_id))
+        reference_count = db.scalar(
+            select(func.count())
+            .select_from(Match)
+            .where(or_(Match.home_team_id == old_id, Match.away_team_id == old_id))
+        )
+        if old_team and old_team.club_id is None and not reference_count:
+            db.delete(old_team)
     db.commit()
     db.refresh(fixture)
     return build_match_response(
@@ -285,9 +357,7 @@ def delete_match(
             MatchPlanSubstitutionSegment.match_plan_id.in_(plan_id_subquery)
         )
     )
-    db.execute(
-        delete(MatchPlanPlayer).where(MatchPlanPlayer.match_plan_id.in_(plan_id_subquery))
-    )
+    db.execute(delete(MatchPlanPlayer).where(MatchPlanPlayer.match_plan_id.in_(plan_id_subquery)))
     db.execute(delete(MatchPlan).where(MatchPlan.match_id == match_id))
 
     db.execute(delete(MatchSquad).where(MatchSquad.match_id == match_id))
