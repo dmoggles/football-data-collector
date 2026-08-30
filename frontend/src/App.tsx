@@ -469,6 +469,7 @@ function App() {
             <h1>TapLine</h1>
           </div>
           <p>Loading session...</p>
+          <p className="app-version">Version {import.meta.env.VITE_APP_VERSION}</p>
         </section>
       </main>
     );
@@ -529,6 +530,7 @@ function App() {
               {authSubmitLabel}
             </button>
           </form>
+          <p className="app-version">Version {import.meta.env.VITE_APP_VERSION}</p>
         </section>
       </main>
     );
@@ -582,7 +584,12 @@ function App() {
           </div>
         ) : null}
 
-        {!sidebarCollapsed ? <p className="sidebar-user">{user.email}</p> : null}
+        {!sidebarCollapsed ? (
+          <div className="sidebar-user-details">
+            <p className="sidebar-user">{user.email}</p>
+            <p className="app-version">Version {import.meta.env.VITE_APP_VERSION}</p>
+          </div>
+        ) : null}
       </aside>
 
       <section className={`content-shell ${isActiveMatchSession ? "in-active-match" : ""}`}>
