@@ -1342,6 +1342,14 @@ textarea {
 .pitch-slot.filled {
   border-color: var(--tl-accent-strong);
   background: rgba(38, 71, 48, 0.95);
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  min-height: 54px;
+  border-radius: 999px;
+  align-content: center;
+  gap: 0;
+  padding: 4px;
 }
 
 .pitch-slot.mismatch {
@@ -1370,6 +1378,34 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.pitch-slot-number {
+  color: var(--tl-accent);
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pitch-slot-initials {
+  color: var(--tl-text);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+}
+
+.pitch-slot.filled .player-note-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  margin: 0;
+}
+
+.pitch-slot-empty-mark {
+  color: var(--tl-muted);
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .player-note-badge {
@@ -2291,9 +2327,11 @@ textarea:focus-visible,
 
   .tap-assignment-help { display: flex; align-items: center; gap: 10px; }
   .pitch-card { padding: 5px; }
-  .pitch-slot { min-width: 62px; min-height: 42px; padding: 2px 3px; }
+  .pitch-slot { min-width: 58px; min-height: 40px; padding: 2px 3px; }
+  .pitch-slot.filled { width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 3px; }
   .pitch-slot-label { font-size: 0.58rem; }
-  .pitch-slot-player { max-width: 64px; font-size: 0.64rem; }
+  .pitch-slot-number { font-size: 0.54rem; }
+  .pitch-slot-initials { font-size: 0.74rem; }
   .prep-player-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .prep-player-tile { width: 100%; min-height: 52px; cursor: pointer; }
 

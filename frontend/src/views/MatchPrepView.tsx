@@ -18,6 +18,13 @@ type MatchPrepViewProps = {
   onFixtureSelected: (fixtureId: string) => void;
 };
 
+function playerInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
 export function MatchPrepView({
   selectedTeamId,
   selectedTeamName,
@@ -616,7 +623,8 @@ export function MatchPrepView({
                         matchPrepDragTarget === slot.id ? "drag-over" : ""
                       }`}
                       style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
-                      title={assignedPlayerNote ? assignedPlayerNote.note_text : undefined}
+                      aria-label={assignedPlayer ? `${assignedPlayer.player_name}${assignedPlayer.shirt_number ? `, number ${assignedPlayer.shirt_number}` : ""}` : `Assign player to ${slot.label}`}
+                      title={assignedPlayer ? `${assignedPlayer.player_name}${assignedPlayerNote ? ` — ${assignedPlayerNote.note_text}` : ""}` : slot.label}
                       onClick={() => {
                         if (selectedPrepPlayerId) {
                           assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
@@ -648,21 +656,25 @@ export function MatchPrepView({
                         }
                       }}
                     >
-                      <span className="pitch-slot-label">
-                        {slot.label}
-                        {assignedPlayer?.shirt_number ? ` #${assignedPlayer.shirt_number}` : ""}
-                      </span>
                       {assignedPlayer ? (
-                        <span className="pitch-slot-player">
-                          {assignedPlayer.player_name}
+                        <>
+                          <span className="pitch-slot-number">
+                            {assignedPlayer.shirt_number ? `#${assignedPlayer.shirt_number}` : "—"}
+                          </span>
+                          <span className="pitch-slot-initials">
+                            {playerInitials(assignedPlayer.player_name)}
+                          </span>
                           {assignedPlayerNote ? (
                             <span className="player-note-badge" aria-label="Has coaching note" title="Has coaching note">
                               N
                             </span>
                           ) : null}
-                        </span>
+                        </>
                       ) : (
-                        <span className="pitch-slot-player muted">Drop Player</span>
+                        <>
+                          <span className="pitch-slot-label">{slot.label}</span>
+                          <span className="pitch-slot-empty-mark" aria-hidden="true">+</span>
+                        </>
                       )}
                     </button>
                   );
