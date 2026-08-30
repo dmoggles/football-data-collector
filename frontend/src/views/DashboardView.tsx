@@ -43,6 +43,7 @@ export function DashboardView({
   const [isNextMatchPlanValidationLoading, setIsNextMatchPlanValidationLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [offScheduleWarning, setOffScheduleWarning] = useState<string | null>(null);
 
   const dashboardStats = useMemo(
     () => ({ teams: teams.length, fixtures: fixtures.length, players: players.length, members: teamMembers.length }),
@@ -124,7 +125,7 @@ export function DashboardView({
     };
   }, [nextMatchTile.fixtureId, selectedTeamCanManage, selectedTeamId]);
 
-  const handleStartCollectionSession = async () => {
+  const handleStartCollectionSession = async (confirmOffSchedule = false) => {
     if (!selectedTeamId || !selectedCollectionFixtureId) return;
     setError(null);
     setIsSubmitting(true);
@@ -132,24 +133,17 @@ export function DashboardView({
       const created = await startCollectionSession({
         match_id: selectedCollectionFixtureId,
         team_id: selectedTeamId,
+        confirm_off_schedule: confirmOffSchedule || undefined,
       });
       await onActiveSessionsChanged();
+      setOffScheduleWarning(null);
       onOpenCollection(created.id);
     } catch (requestError) {
-      if (requestError instanceof Error && requestError.message.includes("Confirm to continue")) {
-        const confirmStart = window.confirm(`${requestError.message}\n\nStart anyway?`);
-        if (confirmStart) {
-          const created = await startCollectionSession({
-            match_id: selectedCollectionFixtureId,
-            team_id: selectedTeamId,
-            confirm_off_schedule: true,
-          });
-          await onActiveSessionsChanged();
-          onOpenCollection(created.id);
-          setIsSubmitting(false);
-          return;
-        }
+      if (!confirmOffSchedule && requestError instanceof Error && requestError.message.includes("Confirm to continue")) {
+        setOffScheduleWarning(requestError.message.replace(/\s*Confirm to continue\.?\s*/i, "").trim());
+        return;
       }
+      setOffScheduleWarning(null);
       setError(requestError instanceof Error ? requestError.message : "Failed to start collection session");
     } finally {
       setIsSubmitting(false);
@@ -272,6 +266,39 @@ export function DashboardView({
           ) : null}
         </article>
       </div>
+      {offScheduleWarning ? (
+        <div
+          className="fixture-composer-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="early-match-title"
+        >
+          <form
+            className="fixture-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleStartCollectionSession(true);
+            }}
+          >
+            <h3 id="early-match-title">Start Match Ahead of Time?</h3>
+            <p className="error-banner">{offScheduleWarning}</p>
+            <p className="muted">The match clock will start only after you begin the first period.</p>
+            <div className="member-actions">
+              <button className="button primary" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Starting..." : "Start Anyway"}
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => setOffScheduleWarning(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }
