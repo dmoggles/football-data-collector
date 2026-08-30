@@ -133,6 +133,10 @@ export function MatchPrepView({
     }
     return mapping;
   }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan]);
+  const selectedPrepPlayerIsOnPitch = useMemo(
+    () => Object.values(matchPrepPlayerBySlotId).some((player) => player.player_id === selectedPrepPlayerId),
+    [matchPrepPlayerBySlotId, selectedPrepPlayerId],
+  );
   const matchPrepBenchPlayers = useMemo(
     () => (matchPrepPlan ? matchPrepPlan.players.filter((p) => p.is_available && !p.lineup_slot) : []),
     [matchPrepPlan],
@@ -537,11 +541,25 @@ export function MatchPrepView({
             Starting selected: {matchPrepPlan.players.filter((player) => player.is_starting).length}/
             {matchPrepPlan.required_starting_count} · Format {matchPrepPlan.format.replace("_", " ")}
           </p>
-          <p className="tap-assignment-help">
-            {selectedPrepPlayerId
-              ? "Player selected — tap a position on the pitch to assign them."
-              : "On touch screens, tap a player and then tap a position."}
-          </p>
+          <div className="tap-assignment-help">
+            <span>
+              {selectedPrepPlayerId
+                ? "Player selected — tap a position to assign them."
+                : "Tap a player or occupied position, then choose their destination."}
+            </span>
+            {selectedPrepPlayerIsOnPitch ? (
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  moveMatchPrepPlayerToBench(selectedPrepPlayerId);
+                  setSelectedPrepPlayerId("");
+                }}
+              >
+                Move to bench
+              </button>
+            ) : null}
+          </div>
           <div className="prep-layout">
             <div className="pitch-card">
               {matchPrepPlan.substitution_segments.length > 0 ? (
@@ -600,9 +618,12 @@ export function MatchPrepView({
                       style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
                       title={assignedPlayerNote ? assignedPlayerNote.note_text : undefined}
                       onClick={() => {
-                        if (!selectedPrepPlayerId) return;
-                        assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
-                        setSelectedPrepPlayerId("");
+                        if (selectedPrepPlayerId) {
+                          assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
+                          setSelectedPrepPlayerId("");
+                          return;
+                        }
+                        if (assignedPlayer) setSelectedPrepPlayerId(assignedPlayer.player_id);
                       }}
                       onDoubleClick={() => {
                         if (assignedPlayer) moveMatchPrepPlayerToBench(assignedPlayer.player_id);
