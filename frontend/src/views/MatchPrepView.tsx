@@ -911,7 +911,7 @@ export function MatchPrepView({
             </div>
           </div>
           <div className="stack-form prep-substitution-planner">
-            <div className="member-actions">
+            <div className="member-actions prep-substitution-heading">
               <h3>Substitution Planning</h3>
               <button
                 className="button secondary"
@@ -934,7 +934,7 @@ export function MatchPrepView({
             ) : null}
             {matchPrepPlan.substitution_segments.map((segment, segmentIndex) => (
               <div className="prep-segment-card" key={`segment-${segmentIndex}`}>
-                <div className="member-actions">
+                <div className="member-actions prep-segment-header">
                   <strong>Segment {segmentIndex + 2}</strong>
                   <span className="muted">
                     {segment.end_minute}&prime; -{" "}

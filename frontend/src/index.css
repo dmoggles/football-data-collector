@@ -1893,6 +1893,7 @@ textarea {
 
 body {
   background: var(--tl-bg-0);
+  overflow-x: clip;
 }
 
 button,
@@ -1925,6 +1926,8 @@ textarea:focus-visible,
 
 .modern-app-shell {
   min-height: 100dvh;
+  width: 100%;
+  max-width: 100vw;
   display: grid;
   grid-template-columns: var(--app-rail-width) minmax(0, 1fr);
   background: linear-gradient(150deg, #101d16 0%, var(--tl-bg-0) 45%);
@@ -2096,6 +2099,18 @@ textarea:focus-visible,
   display: grid;
   align-content: start;
   gap: 18px;
+  min-width: 0;
+}
+
+.route-content > *,
+.section-card,
+.stack-form,
+.prep-layout,
+.prep-side,
+.prep-substitution-planner,
+.prep-segment-card {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .page-heading {
@@ -2309,6 +2324,7 @@ textarea:focus-visible,
   .modern-app-shell {
     display: block;
     padding-bottom: calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom));
+    overflow-x: clip;
   }
 
   .app-rail { display: none; }
@@ -2325,8 +2341,11 @@ textarea:focus-visible,
   .context-status { display: none; }
 
   .route-content {
-    padding: 20px 14px 12px;
+    width: 100%;
+    max-width: 100vw;
+    padding: 20px 14px calc(24px + var(--app-bottom-nav-height) + env(safe-area-inset-bottom));
     gap: 14px;
+    overflow-x: clip;
   }
 
   .page-heading h1 { font-size: 1.75rem; }
@@ -2334,14 +2353,19 @@ textarea:focus-visible,
 
   .bottom-navigation {
     position: fixed;
-    z-index: 50;
-    inset: auto 0 0;
+    z-index: 1000;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: block;
+    width: 100vw;
+    height: calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom));
     min-height: calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom));
     padding: 5px 7px env(safe-area-inset-bottom);
     border-top: 1px solid var(--tl-border);
     background: rgba(9, 16, 13, 0.96);
     backdrop-filter: blur(16px);
+    transform: translateZ(0);
   }
   .bottom-navigation .primary-navigation {
     grid-template-columns: repeat(5, 1fr);
@@ -2383,6 +2407,52 @@ textarea:focus-visible,
     overflow-y: auto;
     border-radius: 20px 20px 0 0;
     padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .prep-substitution-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .prep-substitution-heading .button {
+    max-width: 150px;
+    white-space: normal;
+  }
+
+  .prep-segment-card {
+    overflow: hidden;
+  }
+
+  .prep-segment-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .prep-segment-header > .muted {
+    text-align: right;
+  }
+
+  .prep-segment-header .prep-segment-minute-input {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .prep-segment-header .button {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .prep-swap-row {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .prep-swap-row .muted {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .pitch-card { padding: 5px; }
