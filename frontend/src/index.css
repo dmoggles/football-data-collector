@@ -1256,6 +1256,15 @@ textarea {
   padding: 1rem;
 }
 
+.confirmation-dialog-overlay {
+  z-index: 1100;
+}
+
+.confirmation-dialog {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
 .fixture-composer {
   width: min(460px, 100%);
   border-radius: 0.95rem;
@@ -2407,6 +2416,29 @@ textarea:focus-visible,
     overflow-y: auto;
     border-radius: 20px 20px 0 0;
     padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .confirmation-dialog-overlay {
+    place-items: center;
+    padding:
+      max(14px, env(safe-area-inset-top))
+      14px
+      max(14px, env(safe-area-inset-bottom));
+  }
+
+  .fixture-composer.confirmation-dialog {
+    width: min(100%, 440px);
+    max-height: calc(100dvh - max(28px, calc(env(safe-area-inset-top) + env(safe-area-inset-bottom))));
+    border-radius: 18px;
+    padding: 18px 16px;
+  }
+
+  .confirmation-dialog .member-actions {
+    flex-wrap: wrap;
+  }
+
+  .confirmation-dialog .member-actions .button {
+    flex: 1 1 130px;
   }
 
   .prep-substitution-heading {

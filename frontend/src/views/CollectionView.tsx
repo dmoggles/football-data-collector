@@ -628,9 +628,9 @@ export function CollectionView({
         </div>
       ) : null}
       {isResetConfirmationOpen ? (
-        <div className="fixture-composer-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-match-title">
+        <div className="fixture-composer-overlay confirmation-dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-match-title">
           <form
-            className="fixture-composer"
+            className="fixture-composer confirmation-dialog"
             onSubmit={(event) => {
               event.preventDefault();
               void handleResetMatch();

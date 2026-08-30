@@ -268,13 +268,13 @@ export function DashboardView({
       </div>
       {offScheduleWarning ? (
         <div
-          className="fixture-composer-overlay"
+          className="fixture-composer-overlay confirmation-dialog-overlay"
           role="dialog"
           aria-modal="true"
           aria-labelledby="early-match-title"
         >
           <form
-            className="fixture-composer"
+            className="fixture-composer confirmation-dialog"
             onSubmit={(event) => {
               event.preventDefault();
               void handleStartCollectionSession(true);
