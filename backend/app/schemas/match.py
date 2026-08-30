@@ -48,3 +48,4 @@ class MatchResponse(BaseModel):
     kickoff_at: datetime | None
     status: str
     can_manage: bool
+    collection_state: str | None = None

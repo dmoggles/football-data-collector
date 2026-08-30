@@ -3,7 +3,7 @@ import hashlib
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.auth_deps import get_current_user
@@ -19,9 +19,9 @@ from app.models.session import Session as UserSession
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.collection_session import (
-    CollectionSessionActionRequest,
     CollectionEventCreateRequest,
     CollectionEventResponse,
+    CollectionSessionActionRequest,
     CollectionSessionResponse,
     CollectionSessionStartRequest,
 )
@@ -429,6 +429,39 @@ def start_next_collection_session_period(
     db.commit()
     db.refresh(session_row)
     return build_collection_session_response(db, session_row, match, payload.team_id)
+
+
+@router.post("/{session_id}/reset", status_code=status.HTTP_204_NO_CONTENT)
+def reset_collection_session(
+    session_id: str,
+    payload: CollectionSessionActionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    ensure_team_admin(db, payload.team_id, user.id)
+    session_row = get_collection_session_or_404(db, session_id)
+    if session_row.team_id != payload.team_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session does not belong to team",
+        )
+    if session_row.state != "live":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only live sessions can be reset",
+        )
+
+    match = get_match_or_404(db, session_row.match_id)
+    ensure_match_contains_team(match, payload.team_id)
+    db.execute(
+        delete(Event).where(
+            Event.match_id == session_row.match_id,
+            Event.team_id == payload.team_id,
+        )
+    )
+    db.delete(session_row)
+    match.status = "scheduled"
+    db.commit()
 
 
 @router.websocket("/{session_id}/ws")

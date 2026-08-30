@@ -631,7 +631,13 @@ function App() {
               setSelectedCollectionSessionId(sessionId);
               setSection("collection");
             }}
-            onActiveSessionsChanged={() => loadActiveCollectionSessions(selectedTeamId)}
+            onActiveSessionsChanged={async () => {
+              await Promise.all([
+                loadActiveCollectionSessions(selectedTeamId),
+                loadFixturesForTeam(selectedTeamId),
+                loadMatchPrepFixtures(selectedTeamId),
+              ]);
+            }}
           />
         ) : null}
 
@@ -647,6 +653,16 @@ function App() {
             collectionSessionSocketState={collectionSessionSocketState}
             onSessionSelected={setSelectedCollectionSessionId}
             onActiveSessionsChanged={() => loadActiveCollectionSessions(selectedTeamId)}
+            onMatchReset={async () => {
+              setSelectedCollectionSessionId("");
+              setCollectionSessionLive(null);
+              await Promise.all([
+                loadActiveCollectionSessions(selectedTeamId),
+                loadFixturesForTeam(selectedTeamId),
+                loadMatchPrepFixtures(selectedTeamId),
+              ]);
+              setSection("dashboard");
+            }}
           />
         ) : null}
 

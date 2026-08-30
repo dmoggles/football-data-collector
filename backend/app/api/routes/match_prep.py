@@ -9,6 +9,7 @@ from app.api.deps import get_db
 from app.api.entitlements import ensure_team_admin, get_team_or_404
 from app.models.club import Club
 from app.models.coaching_note import CoachingNote
+from app.models.collection_session import CollectionSession
 from app.models.match import Match
 from app.models.match_plan import MatchPlan
 from app.models.match_plan_player import MatchPlanPlayer
@@ -21,8 +22,8 @@ from app.schemas.match_prep import (
     CoachingNoteResponse,
     MatchPrepFixtureResponse,
     MatchPrepPlanResponse,
-    MatchPrepPlanValidationResponse,
     MatchPrepPlanUpsertRequest,
+    MatchPrepPlanValidationResponse,
     MatchPrepPlayerSelectionResponse,
     MatchPrepSubstitutionSegmentResponse,
     MatchPrepSubstitutionSwapResponse,
@@ -30,8 +31,8 @@ from app.schemas.match_prep import (
 from app.services.formations import (
     get_formation_options,
     get_required_starting_count,
-    get_slot_role_map,
     get_slot_ids,
+    get_slot_role_map,
     is_allowed_formation,
 )
 
@@ -51,6 +52,20 @@ def get_match_or_404(db: Session, match_id: str) -> Match:
 def ensure_match_contains_team(match: Match, team_id: str) -> None:
     if team_id not in [match.home_team_id, match.away_team_id]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Team is not part of this fixture")
+
+
+def ensure_match_prep_not_started(db: Session, match_id: str, team_id: str) -> None:
+    session_id = db.scalar(
+        select(CollectionSession.id).where(
+            CollectionSession.match_id == match_id,
+            CollectionSession.team_id == team_id,
+        )
+    )
+    if session_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Match prep cannot be changed after collection has started",
+        )
 
 
 def ensure_formation_valid(match_format: str, formation: str) -> None:
@@ -351,6 +366,7 @@ def create_coaching_note(
     ensure_team_admin(db, payload.team_id, user.id)
     match = get_match_or_404(db, payload.match_id)
     ensure_match_contains_team(match, payload.team_id)
+    ensure_match_prep_not_started(db, payload.match_id, payload.team_id)
 
     player_id = payload.player_id.strip() if payload.player_id else None
     if player_id:
@@ -408,6 +424,7 @@ def delete_coaching_note(
     ensure_team_admin(db, note.team_id, user.id)
     match = get_match_or_404(db, note.match_id)
     ensure_match_contains_team(match, note.team_id)
+    ensure_match_prep_not_started(db, note.match_id, note.team_id)
 
     db.delete(note)
     db.commit()
@@ -425,7 +442,11 @@ def list_upcoming_match_prep_fixtures(
 
     rows = db.scalars(
         select(Match).where(
-            or_(Match.home_team_id == team_id, Match.away_team_id == team_id)
+            or_(Match.home_team_id == team_id, Match.away_team_id == team_id),
+            ~select(CollectionSession.id).where(
+                CollectionSession.match_id == Match.id,
+                CollectionSession.team_id == team_id,
+            ).exists(),
         ).order_by(Match.kickoff_at.is_(None), Match.kickoff_at.asc(), Match.created_at.desc())
     ).all()
 
@@ -482,6 +503,7 @@ def upsert_match_prep_plan(
     ensure_team_admin(db, payload.team_id, user.id)
     match = get_match_or_404(db, payload.match_id)
     ensure_match_contains_team(match, payload.team_id)
+    ensure_match_prep_not_started(db, payload.match_id, payload.team_id)
     ensure_formation_valid(match.format, payload.formation.strip())
 
     players = db.scalars(select(Player).where(Player.team_id == payload.team_id)).all()

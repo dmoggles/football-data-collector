@@ -213,6 +213,12 @@ textarea {
   color: var(--tl-silver);
 }
 
+.button.danger {
+  border: 1px solid var(--tl-danger-border);
+  background: var(--tl-danger-bg);
+  color: var(--tl-danger-text);
+}
+
 .button:disabled {
   opacity: 0.7;
   cursor: default;
@@ -492,7 +498,27 @@ textarea {
 .collection-actions {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.55rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--tl-border-soft);
+}
+
+.collection-period-actions,
+.collection-management-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.collection-management-actions {
+  margin-left: auto;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--tl-border-soft);
+}
+
+.collection-management-actions .muted {
+  font-size: 0.78rem;
 }
 
 .collection-section-card {
@@ -1507,6 +1533,20 @@ textarea {
   .collection-header-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .collection-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .collection-management-actions {
+    justify-content: space-between;
+    margin-left: 0;
+    padding-top: 0.55rem;
+    padding-left: 0;
+    border-top: 1px solid var(--tl-border-soft);
+    border-left: 0;
   }
 
   .collection-section-card {

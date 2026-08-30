@@ -47,6 +47,7 @@ This document defines backend authorization expectations for current roles and s
 | Match Prep | `PUT /match-prep/plan` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Collection Sessions | `GET /collection-sessions/active?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Collection Sessions | `POST /collection-sessions/start` | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Collection Sessions | `POST /collection-sessions/{session_id}/reset` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Collection Sessions | `GET /collection-sessions/{session_id}?team_id={team_id}` | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Collection Sessions | `POST /collection-sessions/{session_id}/end-period` | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Collection Sessions | `POST /collection-sessions/{session_id}/start-period` | ❌ | ❌ | ❌ | ✅ | ✅ |

@@ -5,6 +5,7 @@ import {
   endCollectionSessionPeriod,
   getMatchPrepPlan,
   listCollectionEvents,
+  resetCollectionSession,
   startCollectionSessionPeriod,
 } from "../api";
 import { GoalMouthDiagram } from "../components/GoalMouthDiagram";
@@ -28,6 +29,7 @@ type CollectionViewProps = {
   collectionSessionSocketState: "idle" | "connecting" | "live";
   onSessionSelected: (sessionId: string) => void;
   onActiveSessionsChanged: () => Promise<void>;
+  onMatchReset: () => Promise<void>;
 };
 
 export function CollectionView({
@@ -41,6 +43,7 @@ export function CollectionView({
   collectionSessionSocketState,
   onSessionSelected,
   onActiveSessionsChanged,
+  onMatchReset,
 }: CollectionViewProps) {
   const [collectionEvents, setCollectionEvents] = useState<CollectionEvent[]>([]);
   const [collectionMatchPrepPlan, setCollectionMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
@@ -54,6 +57,7 @@ export function CollectionView({
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
   const [eventComposerAssisterId, setEventComposerAssisterId] = useState("");
   const [eventComposerGoalPoint, setEventComposerGoalPoint] = useState<{ y: number; z: number } | null>(null);
+  const [isResetConfirmationOpen, setIsResetConfirmationOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -332,6 +336,23 @@ export function CollectionView({
     }
   };
 
+  const handleResetMatch = async () => {
+    if (!selectedTeamId || !selectedCollectionSessionId) return;
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await resetCollectionSession(selectedCollectionSessionId, selectedTeamId);
+      setIsResetConfirmationOpen(false);
+      setCollectionEvents([]);
+      onSessionSelected("");
+      await onMatchReset();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to reset match");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleConfirmSubstitution = async () => {
     if (!subPlayerOutId || !subPlayerInId || !selectedCollectionSessionId || !selectedTeamId) return;
     setIsSubmitting(true);
@@ -560,35 +581,80 @@ export function CollectionView({
                 ) : null}
               </div>
               <div className="collection-actions">
-                {collectionSessionLive.can_end_period && selectedTeamCanManage ? (
-                  <button
-                    className="button primary"
-                    type="button"
-                    onClick={handleEndCollectionPeriod}
-                    disabled={isSubmitting}
-                  >
-                    End Period
-                  </button>
+                <div className="collection-period-actions">
+                  {collectionSessionLive.can_end_period && selectedTeamCanManage ? (
+                    <button
+                      className="button primary"
+                      type="button"
+                      onClick={handleEndCollectionPeriod}
+                      disabled={isSubmitting}
+                    >
+                      End Period
+                    </button>
+                  ) : null}
+                  {collectionSessionLive.can_start_next_period && selectedTeamCanManage ? (
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={handleStartNextCollectionPeriod}
+                      disabled={isSubmitting}
+                    >
+                      Start Period
+                    </button>
+                  ) : null}
+                  {collectionSessionLive.state === "ended" ? (
+                    <p className="muted">Session completed.</p>
+                  ) : null}
+                  {!selectedTeamCanManage ? <p className="muted">Read-only for data entry role.</p> : null}
+                </div>
+                {selectedTeamCanManage && collectionSessionLive.state === "live" ? (
+                  <div className="collection-management-actions">
+                    <span className="muted">Match management</span>
+                    <button
+                      className="button danger"
+                      type="button"
+                      onClick={() => setIsResetConfirmationOpen(true)}
+                      disabled={isSubmitting}
+                    >
+                      Reset Match
+                    </button>
+                  </div>
                 ) : null}
-                {collectionSessionLive.can_start_next_period && selectedTeamCanManage ? (
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={handleStartNextCollectionPeriod}
-                    disabled={isSubmitting}
-                  >
-                    Start Period
-                  </button>
-                ) : null}
-                {collectionSessionLive.state === "ended" ? (
-                  <p className="muted">Session completed.</p>
-                ) : null}
-                {!selectedTeamCanManage ? <p className="muted">Read-only for data entry role.</p> : null}
               </div>
             </>
           ) : (
             <p className="muted">No active session selected.</p>
           )}
+        </div>
+      ) : null}
+      {isResetConfirmationOpen ? (
+        <div className="fixture-composer-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-match-title">
+          <form
+            className="fixture-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleResetMatch();
+            }}
+          >
+            <h3 id="reset-match-title">Reset Match?</h3>
+            <p className="error-banner">
+              All collected match events for this team will be permanently deleted.
+            </p>
+            <p className="muted">Match prep, planned substitutions, squad selections, and coaching notes will be preserved.</p>
+            <div className="member-actions">
+              <button className="button danger" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Resetting..." : "Reset Match"}
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => setIsResetConfirmationOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
       {isSubComposerOpen ? (

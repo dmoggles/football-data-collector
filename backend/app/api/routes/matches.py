@@ -8,6 +8,7 @@ from app.api.entitlements import get_team_or_404
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.club import Club
 from app.models.coaching_note import CoachingNote
+from app.models.collection_session import CollectionSession
 from app.models.event import Event
 from app.models.match import Match
 from app.models.match_plan import MatchPlan
@@ -31,6 +32,7 @@ def build_match_response(
     away_team_name: str,
     away_club_name: str | None,
     can_manage: bool,
+    collection_state: str | None = None,
 ) -> MatchResponse:
     return MatchResponse(
         id=match.id,
@@ -46,6 +48,7 @@ def build_match_response(
         kickoff_at=match.kickoff_at,
         status=match.status,
         can_manage=can_manage,
+        collection_state=collection_state,
     )
 
 
@@ -177,6 +180,15 @@ def list_matches(
 
     admin_team_ids = list_user_admin_team_ids(db, user.id)
     rows = db.execute(query).all()
+    collection_states: dict[str, str] = {}
+    if team_id:
+        collection_states = dict(
+            db.execute(
+                select(CollectionSession.match_id, CollectionSession.state).where(
+                    CollectionSession.team_id == team_id
+                )
+            ).all()
+        )
     return [
         build_match_response(
             match=match,
@@ -185,6 +197,7 @@ def list_matches(
             away_team_name=away_team_name,
             away_club_name=away_club_name,
             can_manage=match.home_team_id in admin_team_ids or match.away_team_id in admin_team_ids,
+            collection_state=collection_states.get(match.id),
         )
         for match, home_team_name, home_club_name, away_team_name, away_club_name in rows
     ]
