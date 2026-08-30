@@ -23,19 +23,15 @@ export function SearchableSelect({
   onChange,
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [draftQuery, setDraftQuery] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const selected = options.find((option) => option.value === value);
-    setQuery(selected?.label ?? "");
-  }, [options, value]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setDraftQuery(null);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -43,6 +39,7 @@ export function SearchableSelect({
   }, []);
 
   const selectedOptionLabel = options.find((option) => option.value === value)?.label ?? "";
+  const query = draftQuery ?? selectedOptionLabel;
   const normalizedQuery = query.trim().toLowerCase();
   const shouldFilter = Boolean(
     normalizedQuery && normalizedQuery !== selectedOptionLabel.trim().toLowerCase(),
@@ -53,13 +50,12 @@ export function SearchableSelect({
 
   const selectOption = useCallback(
     (nextValue: string) => {
-      const selected = options.find((option) => option.value === nextValue);
       onChange(nextValue);
-      setQuery(selected?.label ?? "");
+      setDraftQuery(null);
       setIsOpen(false);
       setActiveIndex(-1);
     },
-    [onChange, options],
+    [onChange],
   );
 
   return (
@@ -68,13 +64,14 @@ export function SearchableSelect({
         value={query}
         onFocus={() => {
           if (!disabled) {
+            setDraftQuery(selectedOptionLabel);
             setIsOpen(true);
             setActiveIndex(0);
           }
         }}
         onChange={(event) => {
           const nextQuery = event.target.value;
-          setQuery(nextQuery);
+          setDraftQuery(nextQuery);
           setIsOpen(true);
           setActiveIndex(0);
           const exact = options.find((option) => option.label.toLowerCase() === nextQuery.trim().toLowerCase());
@@ -101,8 +98,8 @@ export function SearchableSelect({
             }
             return;
           }
-          if (event.key === "Escape") { setIsOpen(false); setActiveIndex(-1); return; }
-          if (event.key === "Tab") { setIsOpen(false); setActiveIndex(-1); }
+          if (event.key === "Escape") { setIsOpen(false); setDraftQuery(null); setActiveIndex(-1); return; }
+          if (event.key === "Tab") { setIsOpen(false); setDraftQuery(null); setActiveIndex(-1); }
         }}
         placeholder={placeholder}
         disabled={disabled}

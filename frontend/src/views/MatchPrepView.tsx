@@ -30,6 +30,7 @@ export function MatchPrepView({
   const [matchPrepPlan, setMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
+  const [selectedPrepPlayerId, setSelectedPrepPlayerId] = useState("");
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
   const [isCoachingNoteComposerOpen, setIsCoachingNoteComposerOpen] = useState(false);
   const [coachingNotePlayerId, setCoachingNotePlayerId] = useState("__team__");
@@ -536,6 +537,11 @@ export function MatchPrepView({
             Starting selected: {matchPrepPlan.players.filter((player) => player.is_starting).length}/
             {matchPrepPlan.required_starting_count} · Format {matchPrepPlan.format.replace("_", " ")}
           </p>
+          <p className="tap-assignment-help">
+            {selectedPrepPlayerId
+              ? "Player selected — tap a position on the pitch to assign them."
+              : "On touch screens, tap a player and then tap a position."}
+          </p>
           <div className="prep-layout">
             <div className="pitch-card">
               {matchPrepPlan.substitution_segments.length > 0 ? (
@@ -593,6 +599,11 @@ export function MatchPrepView({
                       }`}
                       style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
                       title={assignedPlayerNote ? assignedPlayerNote.note_text : undefined}
+                      onClick={() => {
+                        if (!selectedPrepPlayerId) return;
+                        assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
+                        setSelectedPrepPlayerId("");
+                      }}
                       onDoubleClick={() => {
                         if (assignedPlayer) moveMatchPrepPlayerToBench(assignedPlayer.player_id);
                       }}
@@ -659,14 +670,16 @@ export function MatchPrepView({
                       <button
                         key={player.player_id}
                         type="button"
-                        className="prep-player-tile"
+                        className={`prep-player-tile ${selectedPrepPlayerId === player.player_id ? "is-selected" : ""}`}
                         draggable
+                        aria-pressed={selectedPrepPlayerId === player.player_id}
                         title={playerNote ? playerNote.note_text : undefined}
                         onDragStart={(event) => {
                           event.dataTransfer.setData("text/plain", player.player_id);
                           event.dataTransfer.effectAllowed = "move";
                         }}
                         onDragEnd={() => setMatchPrepDragTarget("")}
+                        onClick={() => setSelectedPrepPlayerId((current) => current === player.player_id ? "" : player.player_id)}
                         onDoubleClick={() => moveMatchPrepPlayerOutOfSquad(player.player_id)}
                       >
                         <strong>
@@ -706,14 +719,16 @@ export function MatchPrepView({
                       <button
                         key={player.player_id}
                         type="button"
-                        className="prep-player-tile is-muted"
+                        className={`prep-player-tile is-muted ${selectedPrepPlayerId === player.player_id ? "is-selected" : ""}`}
                         draggable
+                        aria-pressed={selectedPrepPlayerId === player.player_id}
                         title={playerNote ? playerNote.note_text : undefined}
                         onDragStart={(event) => {
                           event.dataTransfer.setData("text/plain", player.player_id);
                           event.dataTransfer.effectAllowed = "move";
                         }}
                         onDragEnd={() => setMatchPrepDragTarget("")}
+                        onClick={() => setSelectedPrepPlayerId((current) => current === player.player_id ? "" : player.player_id)}
                         onDoubleClick={() => moveMatchPrepPlayerToBench(player.player_id)}
                       >
                         <strong>

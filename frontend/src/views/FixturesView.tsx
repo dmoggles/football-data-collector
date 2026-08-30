@@ -59,6 +59,15 @@ export function FixturesView({
     return grouped;
   }, [fixtures]);
 
+  const fixtureAgenda = useMemo(
+    () => [...fixtures].sort((a, b) => {
+      if (!a.kickoff_at) return 1;
+      if (!b.kickoff_at) return -1;
+      return new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime();
+    }),
+    [fixtures],
+  );
+
   const fixtureConflictWarnings = useMemo(() => {
     if (!selectedTeamId || !fixtureOpponentTeamId || !fixtureKickoffDate) return [];
     const targetKickoffMinutes = fixtureKickoffTime ? timeToMinutes(fixtureKickoffTime) : null;
@@ -316,6 +325,34 @@ export function FixturesView({
       {selectedTeamId ? (
         <>
           <p className="muted">Showing fixtures for {selectedTeamName}.</p>
+          <div className="mobile-fixture-agenda">
+            {fixtureAgenda.length === 0 ? <p className="muted">No fixtures scheduled.</p> : null}
+            {fixtureAgenda.map((fixture) => {
+              const selectedTeamIsHome = fixture.home_team_id === selectedTeamId;
+              const oppositionName = (selectedTeamIsHome
+                ? `${fixture.away_club_name} ${fixture.away_team_name}`
+                : `${fixture.home_club_name} ${fixture.home_team_name}`).trim();
+              return (
+                <button
+                  className="agenda-fixture-row"
+                  disabled={!fixture.can_manage}
+                  key={fixture.id}
+                  onClick={() => startFixtureEdit(fixture)}
+                  type="button"
+                >
+                  <span className="agenda-date">
+                    <strong>{fixture.kickoff_at ? new Date(fixture.kickoff_at).toLocaleDateString(undefined, { day: "2-digit" }) : "—"}</strong>
+                    <small>{fixture.kickoff_at ? new Date(fixture.kickoff_at).toLocaleDateString(undefined, { month: "short" }) : "TBD"}</small>
+                  </span>
+                  <span className="agenda-match">
+                    <strong>{oppositionName}</strong>
+                    <small>{selectedTeamIsHome ? "Home" : "Away"} · {fixture.kickoff_at ? new Date(fixture.kickoff_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Time TBD"}</small>
+                  </span>
+                  <span className={`fixture-chip ${fixtureStatusClass(fixture.status)}`}>{fixture.status}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="calendar-weekdays">
             {CALENDAR_WEEKDAY_LABELS.map((label) => (
               <span key={label}>{label}</span>

@@ -1,3 +1,5 @@
+/* Goal geometry helpers are exported for shared rendering and unit tests. */
+/* eslint-disable react-refresh/only-export-components */
 import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
 
 type GoalPoint = { y: number; z: number } | null;
