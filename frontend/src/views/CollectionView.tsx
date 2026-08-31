@@ -743,7 +743,7 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button shot ${eventComposerType === "shot" ? "active" : ""}`}
                 aria-label="Shot"
-                title="Shot"
+                data-tooltip="Shot"
                 onClick={() => {
                   setEventComposerType("shot");
                   setEventComposerAssisterId("");
@@ -763,7 +763,7 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button shot-against ${eventComposerType === "shot_against" ? "active" : ""}`}
                 aria-label="Shot against"
-                title="Shot against"
+                data-tooltip="Shot against"
                 onClick={() => {
                   setEventComposerType("shot_against");
                   setEventComposerGoalPoint(null);
@@ -777,7 +777,7 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button tackle ${eventComposerType === "tackle" ? "active" : ""}`}
                 aria-label="Tackle"
-                title="Tackle"
+                data-tooltip="Tackle"
                 onClick={() => {
                   setEventComposerType("tackle");
                   setEventComposerAssisterId("");
@@ -797,7 +797,7 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button interception ${eventComposerType === "interception" ? "active" : ""}`}
                 aria-label="Interception"
-                title="Interception"
+                data-tooltip="Interception"
                 onClick={() => {
                   setEventComposerType("interception");
                   setEventComposerAssisterId("");
