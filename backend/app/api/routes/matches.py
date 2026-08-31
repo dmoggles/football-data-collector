@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
@@ -25,6 +27,14 @@ from app.services.team_names import find_exact_teams
 router = APIRouter(prefix="/matches", tags=["matches"])
 
 
+def serialize_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def build_match_response(
     match: Match,
     home_team_name: str,
@@ -45,7 +55,7 @@ def build_match_response(
         format=match.format,
         period_format=match.period_format,
         period_length_minutes=match.period_length_minutes,
-        kickoff_at=match.kickoff_at,
+        kickoff_at=serialize_utc(match.kickoff_at),
         status=match.status,
         can_manage=can_manage,
         collection_state=collection_state,
