@@ -35,6 +35,13 @@ type CollectionViewProps = {
 
 type EventComposerType = "shot" | "tackle" | "interception" | "shot_against";
 
+const eventComposerLabels: Record<EventComposerType, string> = {
+  shot: "Shot",
+  shot_against: "Shot Against",
+  tackle: "Tackle",
+  interception: "Interception",
+};
+
 export function CollectionView({
   selectedTeamId,
   selectedTeamCanManage,
@@ -737,13 +744,12 @@ export function CollectionView({
       {isEventComposerOpen ? (
         <div className="fixture-composer-overlay event-entry-overlay" role="dialog" aria-modal="true">
           <div className="fixture-composer event-composer">
-            <h3>Capture Event</h3>
+            <h3>Create {eventComposerLabels[eventComposerType]}</h3>
             <div className="event-type-toggle">
               <button
                 type="button"
                 className={`event-type-button shot ${eventComposerType === "shot" ? "active" : ""}`}
                 aria-label="Shot"
-                data-tooltip="Shot"
                 onClick={() => {
                   setEventComposerType("shot");
                   setEventComposerAssisterId("");
@@ -763,7 +769,6 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button shot-against ${eventComposerType === "shot_against" ? "active" : ""}`}
                 aria-label="Shot against"
-                data-tooltip="Shot against"
                 onClick={() => {
                   setEventComposerType("shot_against");
                   setEventComposerGoalPoint(null);
@@ -777,7 +782,6 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button tackle ${eventComposerType === "tackle" ? "active" : ""}`}
                 aria-label="Tackle"
-                data-tooltip="Tackle"
                 onClick={() => {
                   setEventComposerType("tackle");
                   setEventComposerAssisterId("");
@@ -797,7 +801,6 @@ export function CollectionView({
                 type="button"
                 className={`event-type-button interception ${eventComposerType === "interception" ? "active" : ""}`}
                 aria-label="Interception"
-                data-tooltip="Interception"
                 onClick={() => {
                   setEventComposerType("interception");
                   setEventComposerAssisterId("");
@@ -829,7 +832,11 @@ export function CollectionView({
                     </button>
                   ))}
                 </div>
-                <p className="muted">Closest tactical fit is preselected; tap another number to override.</p>
+                <p className="event-selection-label" aria-live="polite">
+                  {eventComposerPlayerId
+                    ? `Player: ${collectionEventPlayers.find((player) => player.id === eventComposerPlayerId)?.display_name ?? "Unknown player"}`
+                    : "Select a player"}
+                </p>
                 {collectionEventPlayers.length === 0 ? (
                   <p className="muted">No matchday squad players available for this fixture.</p>
                 ) : null}
@@ -854,6 +861,11 @@ export function CollectionView({
                       </button>
                     ))}
                   </div>
+                  <p className="event-selection-label" aria-live="polite">
+                    {eventComposerAssisterId
+                      ? `Key pass: ${collectionEventPlayers.find((player) => player.id === eventComposerAssisterId)?.display_name ?? "Unknown player"}`
+                      : "No key-pass player selected"}
+                  </p>
                 </div>
               ) : null}
               {eventComposerType === "shot" || eventComposerType === "shot_against" ? (

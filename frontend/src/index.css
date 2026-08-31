@@ -759,7 +759,6 @@ textarea {
 }
 
 .event-type-button {
-  position: relative;
   width: 100%;
   aspect-ratio: 1;
   min-width: 0;
@@ -772,38 +771,6 @@ textarea {
   place-items: center;
   padding: 12px;
   cursor: pointer;
-}
-
-.event-type-button::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  z-index: 20;
-  left: 50%;
-  top: calc(100% + 7px);
-  transform: translate(-50%, -3px);
-  width: max-content;
-  max-width: 150px;
-  border: 1px solid var(--tl-border-soft);
-  border-radius: 7px;
-  background: rgba(5, 11, 8, 0.96);
-  color: var(--tl-text);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
-  padding: 5px 8px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
-}
-
-.event-type-button:hover::after,
-.event-type-button:focus-visible::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translate(-50%, 0);
 }
 
 .event-type-button svg {
@@ -845,6 +812,15 @@ textarea {
 .event-player-panel {
   display: grid;
   gap: 0.4rem;
+}
+
+.event-selection-label {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--tl-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .event-player-grid {
