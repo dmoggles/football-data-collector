@@ -2381,7 +2381,7 @@ textarea:focus-visible,
 .immersive-exit {
   position: fixed;
   z-index: 60;
-  top: max(14px, env(safe-area-inset-top));
+  top: max(26px, env(safe-area-inset-top));
   right: 18px;
   min-height: 42px;
   border: 1px solid var(--tl-border-soft);
@@ -2591,6 +2591,9 @@ textarea:focus-visible,
     min-height: 0;
     overflow: hidden;
     padding: 6px;
+  }
+  .immersive-exit {
+    top: max(14px, env(safe-area-inset-top));
   }
   .immersive-shell .collection-section-card {
     height: calc(100svh - 12px);
