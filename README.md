@@ -13,6 +13,9 @@ Technical notes:
 - Python dependency/environment manager: `uv`
 - Primary database: MySQL
 
+Production and development host provisioning, Nginx/TLS setup, deployment verification, backups,
+and migration procedures are documented in [docs/host-deployment.md](docs/host-deployment.md).
+
 ## Local MySQL Dev/Test Setup
 
 This repo includes a local MySQL workflow for both development and testing databases.
