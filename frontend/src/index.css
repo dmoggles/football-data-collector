@@ -2563,8 +2563,24 @@ textarea:focus-visible,
   .stats-player-table { display: block; overflow-x: auto; white-space: nowrap; }
   .stats-filter-bar { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 5px; }
 
-  .immersive-shell { padding: 6px; }
-  .immersive-shell .collection-section-card { height: calc(100dvh - 12px); padding: 8px; }
+  .immersive-shell {
+    height: 100svh;
+    min-height: 0;
+    overflow: hidden;
+    padding: 6px;
+  }
+  .immersive-shell .collection-section-card {
+    height: calc(100svh - 12px);
+    min-height: 0;
+    padding: 8px;
+  }
+  .immersive-shell .collection-screen {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+  .immersive-shell .collection-pitch-wrap .pitch-surface {
+    width: min(100%, calc((100svh - 280px) * 0.64));
+    max-height: 100%;
+  }
   .collection-management-actions .muted { display: none; }
 }
 
