@@ -32,6 +32,44 @@ type CollectionViewProps = {
   onMatchReset: () => Promise<void>;
 };
 
+type EventComposerType = "shot" | "tackle" | "interception" | "shot_against";
+
+function EventTypeIcon({ type }: { type: EventComposerType }) {
+  if (type === "shot") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="11" />
+        <path d="m16 11 4 3-1.5 4.5h-5L12 14zM8 10l4 4M24 10l-4 4M9 23l4.5-4.5M23 23l-4.5-4.5" />
+      </svg>
+    );
+  }
+  if (type === "shot_against") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 32 32">
+        <path d="M5 25V8h22v17M5 12h22" />
+        <circle cx="16" cy="19" r="4" />
+        <path d="m16 4 3 3-3 3M19 7h-7" />
+      </svg>
+    );
+  }
+  if (type === "tackle") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 32 32">
+        <path d="m7 8 18 16M25 8 7 24" />
+        <path d="m6 13 1-5 5 1M20 9l5-1 1 5M6 19l1 5 5-1M20 23l5 1 1-5" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" viewBox="0 0 32 32">
+      <path d="M6 8h7c5 0 4 8 9 8h4" />
+      <path d="m22 12 4 4-4 4" />
+      <path d="M6 24h7c3 0 4-3 5-5M6 16h6" />
+      <circle cx="7" cy="8" r="2" />
+    </svg>
+  );
+}
+
 export function CollectionView({
   selectedTeamId,
   selectedTeamCanManage,
@@ -53,7 +91,7 @@ export function CollectionView({
   const [subPlayerInId, setSubPlayerInId] = useState("");
   const [dismissedPlannedSubKeys, setDismissedPlannedSubKeys] = useState<Set<string>>(new Set());
   const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
-  const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "shot_against">("shot");
+  const [eventComposerType, setEventComposerType] = useState<EventComposerType>("shot");
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
   const [eventComposerAssisterId, setEventComposerAssisterId] = useState("");
   const [eventComposerGoalPoint, setEventComposerGoalPoint] = useState<{ y: number; z: number } | null>(null);
@@ -738,7 +776,9 @@ export function CollectionView({
             <div className="event-type-toggle">
               <button
                 type="button"
-                className={`button ${eventComposerType === "shot" ? "primary" : "secondary"}`}
+                className={`event-type-button shot ${eventComposerType === "shot" ? "active" : ""}`}
+                aria-label="Shot"
+                title="Shot"
                 onClick={() => {
                   setEventComposerType("shot");
                   setEventComposerAssisterId("");
@@ -752,11 +792,13 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                Shot
+                <EventTypeIcon type="shot" />
               </button>
               <button
                 type="button"
-                className={`button ${eventComposerType === "shot_against" ? "primary" : "secondary"}`}
+                className={`event-type-button shot-against ${eventComposerType === "shot_against" ? "active" : ""}`}
+                aria-label="Shot against"
+                title="Shot against"
                 onClick={() => {
                   setEventComposerType("shot_against");
                   setEventComposerGoalPoint(null);
@@ -764,11 +806,13 @@ export function CollectionView({
                   setEventComposerPlayerId(predictGoalkeeperPlayerId());
                 }}
               >
-                Shot Against
+                <EventTypeIcon type="shot_against" />
               </button>
               <button
                 type="button"
-                className={`button ${eventComposerType === "tackle" ? "primary" : "secondary"}`}
+                className={`event-type-button tackle ${eventComposerType === "tackle" ? "active" : ""}`}
+                aria-label="Tackle"
+                title="Tackle"
                 onClick={() => {
                   setEventComposerType("tackle");
                   setEventComposerAssisterId("");
@@ -782,11 +826,13 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                Tackle
+                <EventTypeIcon type="tackle" />
               </button>
               <button
                 type="button"
-                className={`button ${eventComposerType === "interception" ? "primary" : "secondary"}`}
+                className={`event-type-button interception ${eventComposerType === "interception" ? "active" : ""}`}
+                aria-label="Interception"
+                title="Interception"
                 onClick={() => {
                   setEventComposerType("interception");
                   setEventComposerAssisterId("");
@@ -800,7 +846,7 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                Interception
+                <EventTypeIcon type="interception" />
               </button>
             </div>
             <div className="event-composer-body">
