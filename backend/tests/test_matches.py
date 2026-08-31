@@ -86,6 +86,11 @@ def test_team_admin_can_create_fixture_with_format() -> None:
     assert payload["period_length_minutes"] == 35
     assert payload["can_manage"] is True
 
+    fixtures_response = client.get(f"/matches?team_id={home_team_id}")
+    assert fixtures_response.status_code == 200
+    saved_fixture = next(row for row in fixtures_response.json() if row["id"] == payload["id"])
+    assert saved_fixture["kickoff_at"] == "2026-04-10T18:00:00Z"
+
 
 def test_data_enterer_can_view_fixtures_but_cannot_create() -> None:
     club_name = f"FixtureClubDE-{uuid.uuid4().hex[:6]}"
