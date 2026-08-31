@@ -9,6 +9,7 @@ import {
   startCollectionSessionPeriod,
 } from "../api";
 import { GoalMouthDiagram } from "../components/GoalMouthDiagram";
+import { InterceptionIcon, ShotAgainstIcon, ShotIcon, TackleIcon } from "../components/EventIcons";
 import { PitchDiagram } from "../components/PitchDiagram";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { predictLikelyPlayerId } from "../domain/eventPredictions";
@@ -33,42 +34,6 @@ type CollectionViewProps = {
 };
 
 type EventComposerType = "shot" | "tackle" | "interception" | "shot_against";
-
-function EventTypeIcon({ type }: { type: EventComposerType }) {
-  if (type === "shot") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 32 32">
-        <circle cx="16" cy="16" r="11" />
-        <path d="m16 11 4 3-1.5 4.5h-5L12 14zM8 10l4 4M24 10l-4 4M9 23l4.5-4.5M23 23l-4.5-4.5" />
-      </svg>
-    );
-  }
-  if (type === "shot_against") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 32 32">
-        <path d="M5 25V8h22v17M5 12h22" />
-        <circle cx="16" cy="19" r="4" />
-        <path d="m16 4 3 3-3 3M19 7h-7" />
-      </svg>
-    );
-  }
-  if (type === "tackle") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 32 32">
-        <path d="m7 8 18 16M25 8 7 24" />
-        <path d="m6 13 1-5 5 1M20 9l5-1 1 5M6 19l1 5 5-1M20 23l5 1 1-5" />
-      </svg>
-    );
-  }
-  return (
-    <svg aria-hidden="true" viewBox="0 0 32 32">
-      <path d="M6 8h7c5 0 4 8 9 8h4" />
-      <path d="m22 12 4 4-4 4" />
-      <path d="M6 24h7c3 0 4-3 5-5M6 16h6" />
-      <circle cx="7" cy="8" r="2" />
-    </svg>
-  );
-}
 
 export function CollectionView({
   selectedTeamId,
@@ -792,7 +757,7 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                <EventTypeIcon type="shot" />
+                <ShotIcon />
               </button>
               <button
                 type="button"
@@ -806,7 +771,7 @@ export function CollectionView({
                   setEventComposerPlayerId(predictGoalkeeperPlayerId());
                 }}
               >
-                <EventTypeIcon type="shot_against" />
+                <ShotAgainstIcon />
               </button>
               <button
                 type="button"
@@ -826,7 +791,7 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                <EventTypeIcon type="tackle" />
+                <TackleIcon />
               </button>
               <button
                 type="button"
@@ -846,7 +811,7 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                <EventTypeIcon type="interception" />
+                <InterceptionIcon />
               </button>
             </div>
             <div className="event-composer-body">
