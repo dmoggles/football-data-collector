@@ -2383,12 +2383,13 @@ textarea:focus-visible,
   z-index: 60;
   top: max(14px, env(safe-area-inset-top));
   right: 18px;
-  min-height: 38px;
+  min-height: 42px;
   border: 1px solid var(--tl-border-soft);
-  border-radius: 999px;
+  border-radius: 0.7rem;
   background: rgba(9, 16, 13, 0.82);
   color: var(--tl-text);
-  padding: 6px 12px;
+  padding: 0.62rem 0.72rem;
+  font: inherit;
   backdrop-filter: blur(10px);
 }
 
