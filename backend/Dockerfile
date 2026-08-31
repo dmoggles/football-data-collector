@@ -8,12 +8,15 @@ ENV UV_PYTHON_DOWNLOADS=never \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# Build from the repository root so the backend and shared formation catalog
+# are both available to the runtime image.
 # Deps layer — cached until pyproject.toml or uv.lock changes
-COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # App source layer
-COPY . .
+COPY backend/ ./
+COPY shared/ /shared/
 RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"

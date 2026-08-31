@@ -80,7 +80,7 @@ jobs:
       matrix:
         include:
           - service: backend
-            context:    ./backend
+            context:    .
             dockerfile: ./backend/Dockerfile
             image:      ghcr.io/dmoggles/tapline-backend
           - service: frontend
