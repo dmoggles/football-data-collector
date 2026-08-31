@@ -2598,6 +2598,9 @@ textarea:focus-visible,
   .immersive-shell .collection-screen {
     grid-template-rows: auto auto minmax(0, 1fr) auto;
   }
+  .immersive-shell .collection-header-row {
+    padding-right: 76px;
+  }
   .immersive-shell .collection-pitch-wrap .pitch-surface {
     width: min(100%, calc((100svh - 205px) * 0.64));
     max-height: 100%;
