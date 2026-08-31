@@ -81,9 +81,11 @@ export function AppShell({
               {teams.map((team) => <option key={team.id} value={team.id}>{team.display_name}</option>)}
             </select>
           </label>
-          <span className="context-status" aria-live="polite">
-            {isWorkspaceLoading ? "Refreshing…" : selectedTeamName ? "Team workspace" : "Select a team"}
-          </span>
+          {isWorkspaceLoading || !selectedTeamName ? (
+            <span className="context-status" aria-live="polite">
+              {isWorkspaceLoading ? "Refreshing…" : "Select a team"}
+            </span>
+          ) : null}
         </div>
         <div className="route-content">{children}</div>
       </section>
