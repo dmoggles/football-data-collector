@@ -735,7 +735,7 @@ export function CollectionView({
         </div>
       ) : null}
       {isEventComposerOpen ? (
-        <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+        <div className="fixture-composer-overlay event-entry-overlay" role="dialog" aria-modal="true">
           <div className="fixture-composer event-composer">
             <h3>Capture Event</h3>
             <div className="event-type-toggle">
