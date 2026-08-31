@@ -2568,7 +2568,18 @@ textarea:focus-visible,
   .stats-filter-bar { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 5px; }
 
   .immersive-shell { padding: 6px; }
-  .immersive-shell .collection-section-card { height: calc(100dvh - 12px); padding: 8px; }
+  .immersive-shell .collection-section-card {
+    height: auto;
+    min-height: calc(100svh - 12px);
+    padding: 8px;
+  }
+  .immersive-shell .collection-screen {
+    grid-template-rows: auto auto auto auto;
+  }
+  .immersive-shell .collection-pitch-wrap .pitch-surface {
+    width: 100%;
+    max-height: none;
+  }
   .collection-management-actions .muted { display: none; }
 }
 
