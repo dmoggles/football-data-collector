@@ -474,13 +474,16 @@ export function CollectionView({
               placeholder="Select active session"
               disabled={activeCollectionSessions.length === 0}
             />
-            <span className="muted">
-              Socket: {collectionSessionSocketState === "live" ? "Live" : collectionSessionSocketState}
-            </span>
           </div>
           {collectionSessionLive ? (
             <>
               <div className="collection-pitch-wrap">
+                <span
+                  className={`collection-socket-indicator ${collectionSessionSocketState}`}
+                  aria-label={`Live connection: ${collectionSessionSocketState}`}
+                  role="status"
+                  title={`Live connection: ${collectionSessionSocketState}`}
+                />
                 <PitchDiagram
                   format={collectionSessionLive.format}
                   onClick={handleCollectionPitchClick}
