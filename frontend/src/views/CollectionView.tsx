@@ -880,17 +880,6 @@ export function CollectionView({
                     viewPaddingTopFt={6}
                     viewPaddingBottomFt={1.5}
                   />
-                  <p className="muted">
-                    {eventComposerGoalPoint
-                      ? `Goal mouth Y ${eventComposerGoalPoint.y.toFixed(1)} (0-100), Z ${eventComposerGoalPoint.z.toFixed(1)}ft (0-20)`
-                      : "Optional: click inside the goal frame to set goal-mouth coordinates"}
-                  </p>
-                  {selectedCollectionGoalDimensions ? (
-                    <p className="muted">
-                      Reference goal size for {collectionSessionLive?.format.replace("_", " ")}:{" "}
-                      {selectedCollectionGoalDimensions.width_ft}ft x {selectedCollectionGoalDimensions.height_ft}ft
-                    </p>
-                  ) : null}
                   <div className="event-outcome-actions">
                     {eventOutcomeOptions.map((option) => (
                       <button
