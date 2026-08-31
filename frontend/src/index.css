@@ -506,6 +506,27 @@ textarea {
   overflow: hidden;
 }
 
+.collection-socket-indicator {
+  position: absolute;
+  z-index: 6;
+  top: 0.65rem;
+  right: 0.65rem;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: #ef5350;
+  box-shadow: 0 0 0 3px rgba(8, 18, 27, 0.62);
+}
+
+.collection-socket-indicator.connecting {
+  background: #f5a623;
+}
+
+.collection-socket-indicator.live {
+  background: #65df70;
+}
+
 .collection-actions {
   display: flex;
   align-items: center;
@@ -2360,14 +2381,15 @@ textarea:focus-visible,
 .immersive-exit {
   position: fixed;
   z-index: 60;
-  top: max(14px, env(safe-area-inset-top));
+  top: max(26px, env(safe-area-inset-top));
   right: 18px;
-  min-height: 38px;
+  min-height: 42px;
   border: 1px solid var(--tl-border-soft);
-  border-radius: 999px;
+  border-radius: 0.7rem;
   background: rgba(9, 16, 13, 0.82);
   color: var(--tl-text);
-  padding: 6px 12px;
+  padding: 0.62rem 0.72rem;
+  font: inherit;
   backdrop-filter: blur(10px);
 }
 
@@ -2378,6 +2400,7 @@ textarea:focus-visible,
 @media (max-width: 1023px) {
   :root { --app-rail-width: 64px; }
   .route-content { padding: 24px; }
+  .immersive-shell .collection-header-row { padding-right: 76px; }
   .stats-grid article:nth-child(5),
   .stats-grid article:nth-child(6) { grid-column: span 3; }
 }
@@ -2569,6 +2592,9 @@ textarea:focus-visible,
     overflow: hidden;
     padding: 6px;
   }
+  .immersive-exit {
+    top: max(14px, env(safe-area-inset-top));
+  }
   .immersive-shell .collection-section-card {
     height: calc(100svh - 12px);
     min-height: 0;
@@ -2578,8 +2604,19 @@ textarea:focus-visible,
     grid-template-rows: auto auto minmax(0, 1fr) auto;
   }
   .immersive-shell .collection-pitch-wrap .pitch-surface {
-    width: min(100%, calc((100svh - 280px) * 0.64));
+    width: min(100%, calc((100svh - 205px) * 0.64));
     max-height: 100%;
+  }
+  .immersive-shell .collection-actions {
+    justify-content: flex-start;
+    gap: 0;
+  }
+  .immersive-shell .collection-period-actions:empty {
+    display: none;
+  }
+  .immersive-shell .collection-management-actions {
+    border-top: 0;
+    padding-top: 0;
   }
   .collection-management-actions .muted { display: none; }
 }
