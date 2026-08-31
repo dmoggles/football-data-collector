@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { createCoachingNote, deleteCoachingNote, getMatchPrepPlan, listCoachingNotes, upsertMatchPrepPlan } from "../api";
 import { PitchDiagram } from "../components/PitchDiagram";
@@ -18,6 +18,13 @@ type MatchPrepViewProps = {
   onFixtureSelected: (fixtureId: string) => void;
 };
 
+function playerInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
 export function MatchPrepView({
   selectedTeamId,
   selectedTeamName,
@@ -30,6 +37,15 @@ export function MatchPrepView({
   const [matchPrepPlan, setMatchPrepPlan] = useState<MatchPrepPlan | null>(null);
   const [coachingNotes, setCoachingNotes] = useState<CoachingNote[]>([]);
   const [matchPrepDragTarget, setMatchPrepDragTarget] = useState("");
+  const [selectedPrepPlayerId, setSelectedPrepPlayerId] = useState("");
+  const [isPitchHelpOpen, setIsPitchHelpOpen] = useState(false);
+  const [pendingSegmentRemoval, setPendingSegmentRemoval] = useState<{
+    segmentIndex: number;
+    playerOutId: string;
+    slotId: string;
+  } | null>(null);
+  const lastPitchTapRef = useRef<{ playerId: string; at: number } | null>(null);
+  const suppressPitchClickRef = useRef(false);
   const [activeMatchPrepSegmentIndex, setActiveMatchPrepSegmentIndex] = useState(0);
   const [isCoachingNoteComposerOpen, setIsCoachingNoteComposerOpen] = useState(false);
   const [coachingNotePlayerId, setCoachingNotePlayerId] = useState("__team__");
@@ -130,11 +146,24 @@ export function MatchPrepView({
       const player = playersById[playerId];
       if (player) mapping[slotId] = player;
     }
+    if (pendingSegmentRemoval?.segmentIndex === activeMatchPrepSegmentIndex - 1) {
+      delete mapping[pendingSegmentRemoval.slotId];
+    }
     return mapping;
-  }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan]);
+  }, [activeMatchPrepSegmentIndex, matchPrepBasePlayerBySlotId, matchPrepPlan, pendingSegmentRemoval]);
+  const matchPrepPitchPlayerIds = useMemo(
+    () => new Set(Object.values(matchPrepPlayerBySlotId).map((player) => player.player_id)),
+    [matchPrepPlayerBySlotId],
+  );
   const matchPrepBenchPlayers = useMemo(
-    () => (matchPrepPlan ? matchPrepPlan.players.filter((p) => p.is_available && !p.lineup_slot) : []),
-    [matchPrepPlan],
+    () => (
+      matchPrepPlan
+        ? matchPrepPlan.players.filter(
+            (player) => player.is_available && player.in_matchday_squad && !matchPrepPitchPlayerIds.has(player.player_id),
+          )
+        : []
+    ),
+    [matchPrepPitchPlayerIds, matchPrepPlan],
   );
   const matchPrepUnavailablePlayers = useMemo(
     () => (matchPrepPlan ? matchPrepPlan.players.filter((p) => !p.is_available && !p.lineup_slot) : []),
@@ -173,6 +202,10 @@ export function MatchPrepView({
 
   const handleSaveMatchPrepPlan = async () => {
     if (!matchPrepPlan) return;
+    if (pendingSegmentRemoval) {
+      setError("Choose the player coming on to complete the pending substitution");
+      return;
+    }
     for (const segment of matchPrepPlan.substitution_segments) {
       if (!Number.isInteger(segment.end_minute) || segment.end_minute < 1) {
         setError("Each substitution segment must have a start minute of at least 1");
@@ -281,6 +314,23 @@ export function MatchPrepView({
           if (player.lineup_slot === slotId) {
             return { ...player, is_starting: false, lineup_slot: null };
           }
+          return player;
+        }),
+      };
+    });
+  };
+
+  const swapMatchPrepPlayerSlots = (firstPlayerId: string, secondPlayerId: string) => {
+    setMatchPrepPlan((current) => {
+      if (!current) return current;
+      const firstPlayer = current.players.find((player) => player.player_id === firstPlayerId);
+      const secondPlayer = current.players.find((player) => player.player_id === secondPlayerId);
+      if (!firstPlayer?.lineup_slot || !secondPlayer?.lineup_slot) return current;
+      return {
+        ...current,
+        players: current.players.map((player) => {
+          if (player.player_id === firstPlayerId) return { ...player, lineup_slot: secondPlayer.lineup_slot };
+          if (player.player_id === secondPlayerId) return { ...player, lineup_slot: firstPlayer.lineup_slot };
           return player;
         }),
       };
@@ -409,6 +459,15 @@ export function MatchPrepView({
         ),
       };
     });
+  };
+
+  const planBenchPlayerForSelectedPitchPlayer = (playerInId: string): boolean => {
+    if (activeMatchPrepSegmentIndex <= 0 || !selectedPrepPlayerId) return false;
+    if (!matchPrepPitchPlayerIds.has(selectedPrepPlayerId) || matchPrepPitchPlayerIds.has(playerInId)) return false;
+    addOrReplaceMatchPrepPlannedSwap(activeMatchPrepSegmentIndex - 1, selectedPrepPlayerId, playerInId);
+    setPendingSegmentRemoval(null);
+    setSelectedPrepPlayerId("");
+    return true;
   };
 
   const removeMatchPrepPlannedSwap = (segmentIndex: number, swapIndex: number) => {
@@ -580,6 +639,30 @@ export function MatchPrepView({
                   assignMatchPrepPlayerToNearestSlot(event, matchPrepSlots);
                 }}
               >
+                <div className="pitch-help">
+                  <button
+                    aria-expanded={isPitchHelpOpen}
+                    aria-label="Show pitch controls"
+                    className="pitch-help-trigger"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsPitchHelpOpen((current) => !current);
+                    }}
+                    type="button"
+                  >
+                    ?
+                  </button>
+                  {isPitchHelpOpen ? (
+                    <div className="pitch-help-popover" role="tooltip">
+                      <strong>Pitch controls</strong>
+                      <span>Tap a player to select them.</span>
+                      <span>Tap another player to swap positions.</span>
+                      <span>Tap an empty position to move there.</span>
+                      <span>Double-tap a player to move them to the bench.</span>
+                      <span>On later segments, use the same gestures to create the substitution listing.</span>
+                    </div>
+                  ) : null}
+                </div>
                 {matchPrepSlots.map((slot) => {
                   const assignedPlayer = matchPrepPlayerBySlotId[slot.id];
                   const mismatch = assignedPlayer ? isPositionMismatch(assignedPlayer.position, slot.role) : false;
@@ -589,12 +672,93 @@ export function MatchPrepView({
                       key={slot.id}
                       type="button"
                       className={`pitch-slot ${assignedPlayer ? "filled" : "empty"} ${mismatch ? "mismatch" : ""} ${
+                        assignedPlayer?.player_id === selectedPrepPlayerId ? "selected" : ""
+                      } ${
                         matchPrepDragTarget === slot.id ? "drag-over" : ""
                       }`}
                       style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
-                      title={assignedPlayerNote ? assignedPlayerNote.note_text : undefined}
+                      aria-label={assignedPlayer ? `${assignedPlayer.player_name}${assignedPlayer.shirt_number ? `, number ${assignedPlayer.shirt_number}` : ""}` : `Assign player to ${slot.label}`}
+                      title={assignedPlayer ? `${assignedPlayer.player_name}${assignedPlayerNote ? ` — ${assignedPlayerNote.note_text}` : ""}` : slot.label}
+                      onClick={() => {
+                        if (suppressPitchClickRef.current) {
+                          suppressPitchClickRef.current = false;
+                          return;
+                        }
+                        if (selectedPrepPlayerId) {
+                          if (activeMatchPrepSegmentIndex > 0) {
+                            const selectedPlayerIsOnPitch = matchPrepPitchPlayerIds.has(selectedPrepPlayerId);
+                            if (assignedPlayer && assignedPlayer.player_id !== selectedPrepPlayerId) {
+                              if (selectedPlayerIsOnPitch) {
+                                setSelectedPrepPlayerId(assignedPlayer.player_id);
+                                return;
+                              }
+                              addOrReplaceMatchPrepPlannedSwap(activeMatchPrepSegmentIndex - 1, assignedPlayer.player_id, selectedPrepPlayerId);
+                              setPendingSegmentRemoval(null);
+                              setSelectedPrepPlayerId("");
+                              return;
+                            }
+                            if (!assignedPlayer) {
+                              if (
+                                pendingSegmentRemoval?.segmentIndex === activeMatchPrepSegmentIndex - 1 &&
+                                pendingSegmentRemoval.slotId === slot.id
+                              ) {
+                                addOrReplaceMatchPrepPlannedSwap(
+                                  activeMatchPrepSegmentIndex - 1,
+                                  pendingSegmentRemoval.playerOutId,
+                                  selectedPrepPlayerId,
+                                );
+                                setPendingSegmentRemoval(null);
+                                setSelectedPrepPlayerId("");
+                              }
+                            }
+                            return;
+                          }
+                          if (assignedPlayer && assignedPlayer.player_id !== selectedPrepPlayerId) {
+                            swapMatchPrepPlayerSlots(selectedPrepPlayerId, assignedPlayer.player_id);
+                            setSelectedPrepPlayerId("");
+                            return;
+                          }
+                          assignMatchPrepPlayerToSlot(selectedPrepPlayerId, slot.id);
+                          setSelectedPrepPlayerId("");
+                          return;
+                        }
+                        if (assignedPlayer) setSelectedPrepPlayerId(assignedPlayer.player_id);
+                      }}
+                      onPointerUp={(event) => {
+                        if (event.pointerType !== "touch" || !assignedPlayer) return;
+                        const now = Date.now();
+                        const lastTap = lastPitchTapRef.current;
+                        if (lastTap?.playerId === assignedPlayer.player_id && now - lastTap.at <= 350) {
+                          event.preventDefault();
+                          suppressPitchClickRef.current = true;
+                          lastPitchTapRef.current = null;
+                          if (activeMatchPrepSegmentIndex > 0) {
+                            setPendingSegmentRemoval({
+                              segmentIndex: activeMatchPrepSegmentIndex - 1,
+                              playerOutId: assignedPlayer.player_id,
+                              slotId: slot.id,
+                            });
+                          } else {
+                            moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          }
+                          setSelectedPrepPlayerId("");
+                          return;
+                        }
+                        lastPitchTapRef.current = { playerId: assignedPlayer.player_id, at: now };
+                      }}
                       onDoubleClick={() => {
-                        if (assignedPlayer) moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                        if (assignedPlayer) {
+                          if (activeMatchPrepSegmentIndex > 0) {
+                            setPendingSegmentRemoval({
+                              segmentIndex: activeMatchPrepSegmentIndex - 1,
+                              playerOutId: assignedPlayer.player_id,
+                              slotId: slot.id,
+                            });
+                          } else {
+                            moveMatchPrepPlayerToBench(assignedPlayer.player_id);
+                          }
+                          setSelectedPrepPlayerId("");
+                        }
                       }}
                       onDragEnter={(event) => { event.preventDefault(); setMatchPrepDragTarget(slot.id); }}
                       onDragOver={(event) => { event.preventDefault(); setMatchPrepDragTarget(slot.id); }}
@@ -616,21 +780,25 @@ export function MatchPrepView({
                         }
                       }}
                     >
-                      <span className="pitch-slot-label">
-                        {slot.label}
-                        {assignedPlayer?.shirt_number ? ` #${assignedPlayer.shirt_number}` : ""}
-                      </span>
                       {assignedPlayer ? (
-                        <span className="pitch-slot-player">
-                          {assignedPlayer.player_name}
+                        <>
+                          <span className="pitch-slot-number">
+                            {assignedPlayer.shirt_number ? `#${assignedPlayer.shirt_number}` : "—"}
+                          </span>
+                          <span className="pitch-slot-initials">
+                            {playerInitials(assignedPlayer.player_name)}
+                          </span>
                           {assignedPlayerNote ? (
                             <span className="player-note-badge" aria-label="Has coaching note" title="Has coaching note">
                               N
                             </span>
                           ) : null}
-                        </span>
+                        </>
                       ) : (
-                        <span className="pitch-slot-player muted">Drop Player</span>
+                        <>
+                          <span className="pitch-slot-label">{slot.label}</span>
+                          <span className="pitch-slot-empty-mark" aria-hidden="true">+</span>
+                        </>
                       )}
                     </button>
                   );
@@ -659,14 +827,19 @@ export function MatchPrepView({
                       <button
                         key={player.player_id}
                         type="button"
-                        className="prep-player-tile"
+                        className={`prep-player-tile ${selectedPrepPlayerId === player.player_id ? "is-selected" : ""}`}
                         draggable
+                        aria-pressed={selectedPrepPlayerId === player.player_id}
                         title={playerNote ? playerNote.note_text : undefined}
                         onDragStart={(event) => {
                           event.dataTransfer.setData("text/plain", player.player_id);
                           event.dataTransfer.effectAllowed = "move";
                         }}
                         onDragEnd={() => setMatchPrepDragTarget("")}
+                        onClick={() => {
+                          if (planBenchPlayerForSelectedPitchPlayer(player.player_id)) return;
+                          setSelectedPrepPlayerId((current) => current === player.player_id ? "" : player.player_id);
+                        }}
                         onDoubleClick={() => moveMatchPrepPlayerOutOfSquad(player.player_id)}
                       >
                         <strong>
@@ -706,14 +879,16 @@ export function MatchPrepView({
                       <button
                         key={player.player_id}
                         type="button"
-                        className="prep-player-tile is-muted"
+                        className={`prep-player-tile is-muted ${selectedPrepPlayerId === player.player_id ? "is-selected" : ""}`}
                         draggable
+                        aria-pressed={selectedPrepPlayerId === player.player_id}
                         title={playerNote ? playerNote.note_text : undefined}
                         onDragStart={(event) => {
                           event.dataTransfer.setData("text/plain", player.player_id);
                           event.dataTransfer.effectAllowed = "move";
                         }}
                         onDragEnd={() => setMatchPrepDragTarget("")}
+                        onClick={() => setSelectedPrepPlayerId((current) => current === player.player_id ? "" : player.player_id)}
                         onDoubleClick={() => moveMatchPrepPlayerToBench(player.player_id)}
                       >
                         <strong>
@@ -736,7 +911,7 @@ export function MatchPrepView({
             </div>
           </div>
           <div className="stack-form prep-substitution-planner">
-            <div className="member-actions">
+            <div className="member-actions prep-substitution-heading">
               <h3>Substitution Planning</h3>
               <button
                 className="button secondary"
@@ -759,7 +934,7 @@ export function MatchPrepView({
             ) : null}
             {matchPrepPlan.substitution_segments.map((segment, segmentIndex) => (
               <div className="prep-segment-card" key={`segment-${segmentIndex}`}>
-                <div className="member-actions">
+                <div className="member-actions prep-segment-header">
                   <strong>Segment {segmentIndex + 2}</strong>
                   <span className="muted">
                     {segment.end_minute}&prime; -{" "}
@@ -807,7 +982,24 @@ export function MatchPrepView({
                     Remove Segment
                   </button>
                 </div>
-                {segment.substitutions.length === 0 ? <p className="muted">No planned swaps yet.</p> : null}
+                {segment.substitutions.length === 0 && pendingSegmentRemoval?.segmentIndex !== segmentIndex ? (
+                  <p className="muted">No planned swaps yet.</p>
+                ) : null}
+                {pendingSegmentRemoval?.segmentIndex === segmentIndex ? (
+                  <div className="member-actions prep-swap-row pending">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => setPendingSegmentRemoval(null)}
+                    >
+                      Cancel
+                    </button>
+                    <span className="muted">
+                      {matchPrepPlan.players.find((player) => player.player_id === pendingSegmentRemoval.playerOutId)?.player_name ?? "Player"}
+                      {" → Select replacement"}
+                    </span>
+                  </div>
+                ) : null}
                 {segment.substitutions.map((swap, swapIndex) => (
                   <div className="member-actions prep-swap-row" key={`segment-${segmentIndex}-swap-${swapIndex}`}>
                     <button

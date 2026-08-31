@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import "./index.css";
-import { SearchableSelect } from "./components/SearchableSelect";
+import { AppShell, type AppDestination } from "./components/AppShell";
 import { SettingsView } from "./views/SettingsView";
 import { PlayersView } from "./views/PlayersView";
 import { MembersView } from "./views/MembersView";
@@ -12,11 +13,10 @@ import { MatchPrepView } from "./views/MatchPrepView";
 import { DashboardView } from "./views/DashboardView";
 import { TeamsView } from "./views/TeamsView";
 import { StatsView } from "./views/StatsView";
+import { MoreView } from "./views/MoreView";
 import {
   type AuthMode,
   type Section,
-  BASE_NAV_ITEMS,
-  ADMIN_NAV_ITEM,
 } from "./constants";
 import {
   isTeamAdminRole,
@@ -56,11 +56,53 @@ import type {
 } from "./types/auth";
 
 
+function sectionFromPath(pathname: string): Section {
+  if (pathname.startsWith("/match")) return "collection";
+  if (pathname.startsWith("/fixtures/") && pathname.endsWith("/prep")) return "match_prep";
+  if (pathname.startsWith("/fixtures")) return "fixtures";
+  if (pathname.startsWith("/stats")) return "stats";
+  if (pathname.startsWith("/team/squad")) return "players";
+  if (pathname.startsWith("/team/staff")) return "members";
+  if (pathname.startsWith("/team/settings")) return "teams";
+  if (pathname.startsWith("/account")) return "settings";
+  if (pathname.startsWith("/admin")) return "admin";
+  return "dashboard";
+}
+
+const sectionPaths: Record<Section, string> = {
+  dashboard: "/",
+  collection: "/match",
+  fixtures: "/fixtures",
+  match_prep: "/fixtures/prep",
+  players: "/team/squad",
+  teams: "/team/settings",
+  members: "/team/staff",
+  settings: "/account",
+  stats: "/stats",
+  admin: "/admin",
+};
+
+const sectionTitles: Record<Section, { eyebrow: string; title: string; description: string }> = {
+  dashboard: { eyebrow: "Today", title: "Home", description: "Your next actions and match-day status." },
+  collection: { eyebrow: "Match day", title: "Match", description: "Start or resume live event collection." },
+  fixtures: { eyebrow: "Schedule", title: "Fixtures", description: "Plan and manage upcoming matches." },
+  match_prep: { eyebrow: "Match day", title: "Match preparation", description: "Build the squad, shape, and substitution plan." },
+  players: { eyebrow: "Team", title: "Squad", description: "Manage players, numbers, and positions." },
+  teams: { eyebrow: "Team", title: "Team settings", description: "Manage clubs, teams, and branding." },
+  members: { eyebrow: "Team", title: "Staff access", description: "Control manager and data collector access." },
+  settings: { eyebrow: "Account", title: "Account security", description: "Update your password and session." },
+  stats: { eyebrow: "Performance", title: "Stats", description: "Review match and season performance." },
+  admin: { eyebrow: "TapLine", title: "Administration", description: "Manage the platform and review activity." },
+};
+
 function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<AuthMode>("login");
-  const [section, setSection] = useState<Section>("dashboard");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const section = sectionFromPath(location.pathname);
+  const isMoreRoute = location.pathname.startsWith("/more");
+  const setSection = useCallback((nextSection: Section) => navigate(sectionPaths[nextSection]), [navigate]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,11 +134,6 @@ function App() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const collectionSessionWsRef = useRef<WebSocket | null>(null);
 
-  const navItems = useMemo(
-    () => (isSuperAdmin ? [...BASE_NAV_ITEMS, ADMIN_NAV_ITEM] : BASE_NAV_ITEMS),
-    [isSuperAdmin],
-  );
-
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamId) ?? null,
     [selectedTeamId, teams],
@@ -114,6 +151,23 @@ function App() {
   }, [activeCollectionSessions, selectedCollectionSessionId]);
   const isActiveMatchSession =
     section === "collection" && !!collectionSessionLive && collectionSessionLive.state === "live";
+
+  const activeDestination: AppDestination = isMoreRoute || ["players", "teams", "members", "settings", "admin"].includes(section)
+    ? "more"
+    : section === "dashboard"
+      ? "home"
+      : section === "collection"
+        ? "match"
+        : section === "stats"
+          ? "stats"
+          : "fixtures";
+
+  useEffect(() => {
+    const matchSession = location.pathname.match(/^\/match\/([^/]+)$/);
+    if (matchSession?.[1]) setSelectedCollectionSessionId(matchSession[1]);
+    const prepFixture = location.pathname.match(/^\/fixtures\/([^/]+)\/prep$/);
+    if (prepFixture?.[1]) setSelectedFixtureForMatchPrep(prepFixture[1]);
+  }, [location.pathname]);
 
   const playersForSelectedTeam = useMemo(() => {
     if (!selectedTeamId) {
@@ -241,13 +295,10 @@ function App() {
       setAdminOverview(null);
       setAdminAuditLogs([]);
       setIsSuperAdmin(false);
-      if (section === "admin") {
-        setSection("dashboard");
-      }
     } finally {
       setIsAdminLoading(false);
     }
-  }, [section]);
+  }, []);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -260,7 +311,7 @@ function App() {
         return;
       }
       try {
-        await loadWorkspaceData();
+        await loadWorkspaceData(window.localStorage.getItem("tapline:selected-team") ?? "");
         await loadAdminData();
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : "Failed to load workspace");
@@ -321,13 +372,6 @@ function App() {
     };
   }, [loadActiveCollectionSessions, selectedTeamId, user]);
 
-
-  useEffect(() => {
-    if (isActiveMatchSession) {
-      setSidebarCollapsed(true);
-    }
-  }, [isActiveMatchSession]);
-
   useEffect(() => {
     const sessionId = selectedCollectionSession?.id ?? "";
     if (!user || section !== "collection" || !selectedTeamId || !sessionId) {
@@ -383,6 +427,10 @@ function App() {
     }
   }, [selectedTeamId, teams]);
 
+  useEffect(() => {
+    if (selectedTeamId) window.localStorage.setItem("tapline:selected-team", selectedTeamId);
+  }, [selectedTeamId]);
+
   const authSubmitLabel = useMemo(() => {
     if (isSubmitting) {
       return "Working...";
@@ -404,7 +452,7 @@ function App() {
       const authenticatedUser = await login(payload);
       setUser(authenticatedUser);
       setPassword("");
-      await loadWorkspaceData();
+      await loadWorkspaceData(window.localStorage.getItem("tapline:selected-team") ?? "");
     } catch (requestError) {
       if (requestError instanceof Error) {
         setError(requestError.message);
@@ -536,92 +584,66 @@ function App() {
     );
   }
 
+  const pageTitle = sectionTitles[section];
+  const showTeamTabs = ["players", "members", "teams"].includes(section);
+
   return (
-    <main className={`app-shell ${sidebarCollapsed ? "sidebar-is-collapsed" : ""}`}>
-      <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
-        <div className="sidebar-top">
-          <button
-            className="sidebar-toggle"
-            onClick={() => setSidebarCollapsed((current) => !current)}
-            type="button"
-          >
-            {sidebarCollapsed ? ">" : "<"}
-          </button>
-          {!sidebarCollapsed ? (
-            <div className="sidebar-brand">
-              <img src="/assets/branding/logo1.png" alt="TapLine logo" className="sidebar-brand-logo" />
-            </div>
-          ) : null}
-        </div>
+    <AppShell
+      activeDestination={activeDestination}
+      clubLogoUrl={selectedTeamClubLogoUrl}
+      immersive={isActiveMatchSession}
+      isWorkspaceLoading={isWorkspaceLoading}
+      onNavigate={(destination) => {
+        if (destination === "home") navigate("/");
+        if (destination === "fixtures") navigate("/fixtures");
+        if (destination === "match") navigate(selectedCollectionSessionId ? `/match/${selectedCollectionSessionId}` : "/match");
+        if (destination === "stats") navigate("/stats");
+        if (destination === "more") navigate("/more");
+      }}
+      onTeamChange={(nextValue) => {
+        setSelectedTeamId(nextValue);
+        setSelectedFixtureForMatchPrep("");
+      }}
+      selectedTeamId={selectedTeamId}
+      selectedTeamName={selectedTeamName}
+      teams={teams}
+    >
+      {isActiveMatchSession ? (
+        <button className="immersive-exit" type="button" onClick={() => navigate("/")} aria-label="Leave match screen">
+          ← Exit
+        </button>
+      ) : null}
+      {!isActiveMatchSession && !isMoreRoute ? (
+        <header className="page-heading">
+          <div>
+            <p className="eyebrow">{pageTitle.eyebrow}</p>
+            <h1>{pageTitle.title}</h1>
+            <p className="muted">{pageTitle.description}</p>
+          </div>
+        </header>
+      ) : null}
 
-        <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <button
-              className={`nav-item ${section === item.id ? "active" : ""}`}
-              key={item.id}
-              onClick={() => setSection(item.id)}
-              type="button"
-              title={item.label}
-              aria-label={item.label}
-            >
-              {sidebarCollapsed ? item.shortLabel : item.label}
-            </button>
-          ))}
+      {showTeamTabs ? (
+        <nav className="section-tabs" aria-label="Team sections">
+          <button className={section === "players" ? "active" : ""} onClick={() => navigate("/team/squad")} type="button">Squad</button>
+          <button className={section === "members" ? "active" : ""} onClick={() => navigate("/team/staff")} type="button">Staff</button>
+          <button className={section === "teams" ? "active" : ""} onClick={() => navigate("/team/settings")} type="button">Settings</button>
         </nav>
-        {!sidebarCollapsed ? (
-          <div className="sidebar-team-selector">
-            <p className="muted">Team</p>
-            <SearchableSelect
-              value={selectedTeamId}
-              onChange={(nextValue) => {
-                setSelectedTeamId(nextValue);
-                setSelectedFixtureForMatchPrep("");
-              }}
-              options={teams.map((team) => ({ value: team.id, label: team.display_name }))}
-              placeholder="Select team"
-              className="sidebar-team-select"
-            />
-          </div>
-        ) : null}
+      ) : null}
 
-        {!sidebarCollapsed ? (
-          <div className="sidebar-user-details">
-            <p className="sidebar-user">{user.email}</p>
-            <p className="app-version">Version {import.meta.env.VITE_APP_VERSION}</p>
-          </div>
-        ) : null}
-      </aside>
+      {error ? <p className="error-banner">{error}</p> : null}
 
-      <section className={`content-shell ${isActiveMatchSession ? "in-active-match" : ""}`}>
-        {!isActiveMatchSession ? (
-          <header className="content-header">
-          <div className="content-brand">
-            <img src="/assets/branding/logo1.png" alt="TapLine logo" className="content-brand-logo" />
-            <div>
-            <h1>TapLine</h1>
-            <div className="content-brand-subtitle">
-              <p className="muted">{isWorkspaceLoading ? "Refreshing data..." : selectedTeamName || "No team selected"}</p>
-            </div>
-            </div>
-          </div>
-          <div className="content-header-actions">
-            {selectedTeamClubLogoUrl ? (
-              <img
-                src={selectedTeamClubLogoUrl}
-                alt={`${selectedTeam?.club_name ?? "Club"} logo`}
-                className="content-club-logo-large"
-              />
-            ) : null}
-            <button className="button secondary" onClick={handleLogout} disabled={isSubmitting}>
-              Log Out
-            </button>
-          </div>
-          </header>
-        ) : null}
+      {isMoreRoute ? (
+        <MoreView
+          email={user.email}
+          isSuperAdmin={isSuperAdmin}
+          isSubmitting={isSubmitting}
+          onLogout={handleLogout}
+          onNavigate={navigate}
+        />
+      ) : null}
 
-        {error ? <p className="error-banner">{error}</p> : null}
-
-        {section === "dashboard" ? (
+        {section === "dashboard" && !isMoreRoute ? (
           <DashboardView
             selectedTeamId={selectedTeamId}
             selectedTeamCanManage={selectedTeamCanManage}
@@ -631,12 +653,12 @@ function App() {
             teamMembers={teamMembers}
             activeCollectionSessions={activeCollectionSessions}
             onOpenMatchPrep={(fixtureId) => {
-              setSection("match_prep");
               setSelectedFixtureForMatchPrep(fixtureId);
+              navigate(`/fixtures/${fixtureId}/prep`);
             }}
             onOpenCollection={(sessionId) => {
               setSelectedCollectionSessionId(sessionId);
-              setSection("collection");
+              navigate(`/match/${sessionId}`);
             }}
             onActiveSessionsChanged={async () => {
               await Promise.all([
@@ -658,7 +680,10 @@ function App() {
             selectedCollectionSession={selectedCollectionSession}
             collectionSessionLive={collectionSessionLive}
             collectionSessionSocketState={collectionSessionSocketState}
-            onSessionSelected={setSelectedCollectionSessionId}
+            onSessionSelected={(sessionId) => {
+              setSelectedCollectionSessionId(sessionId);
+              navigate(`/match/${sessionId}`);
+            }}
             onActiveSessionsChanged={() => loadActiveCollectionSessions(selectedTeamId)}
             onMatchReset={async () => {
               setSelectedCollectionSessionId("");
@@ -668,7 +693,7 @@ function App() {
                 loadFixturesForTeam(selectedTeamId),
                 loadMatchPrepFixtures(selectedTeamId),
               ]);
-              setSection("dashboard");
+              navigate("/");
             }}
           />
         ) : null}
@@ -707,7 +732,10 @@ function App() {
             hasAnyManagerAccess={ownedTeams.length > 0}
             matchPrepFixtures={matchPrepFixtures}
             selectedFixtureId={selectedFixtureForMatchPrep}
-            onFixtureSelected={setSelectedFixtureForMatchPrep}
+            onFixtureSelected={(fixtureId) => {
+              setSelectedFixtureForMatchPrep(fixtureId);
+              if (fixtureId) navigate(`/fixtures/${fixtureId}/prep`, { replace: true });
+            }}
           />
         ) : null}
 
@@ -748,8 +776,7 @@ function App() {
             onWorkspaceDataChanged={() => loadWorkspaceData(selectedTeamId)}
           />
         ) : null}
-      </section>
-    </main>
+    </AppShell>
   );
 }
 

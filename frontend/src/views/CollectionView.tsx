@@ -9,6 +9,7 @@ import {
   startCollectionSessionPeriod,
 } from "../api";
 import { GoalMouthDiagram } from "../components/GoalMouthDiagram";
+import { InterceptionIcon, ShotAgainstIcon, ShotIcon, TackleIcon } from "../components/EventIcons";
 import { PitchDiagram } from "../components/PitchDiagram";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { predictLikelyPlayerId } from "../domain/eventPredictions";
@@ -32,6 +33,15 @@ type CollectionViewProps = {
   onMatchReset: () => Promise<void>;
 };
 
+type EventComposerType = "shot" | "tackle" | "interception" | "shot_against";
+
+const eventComposerLabels: Record<EventComposerType, string> = {
+  shot: "Shot",
+  shot_against: "Shot Against",
+  tackle: "Tackle",
+  interception: "Interception",
+};
+
 export function CollectionView({
   selectedTeamId,
   selectedTeamCanManage,
@@ -53,7 +63,7 @@ export function CollectionView({
   const [subPlayerInId, setSubPlayerInId] = useState("");
   const [dismissedPlannedSubKeys, setDismissedPlannedSubKeys] = useState<Set<string>>(new Set());
   const [pendingEventPitchPoint, setPendingEventPitchPoint] = useState<{ xPct: number; yPct: number } | null>(null);
-  const [eventComposerType, setEventComposerType] = useState<"shot" | "tackle" | "interception" | "shot_against">("shot");
+  const [eventComposerType, setEventComposerType] = useState<EventComposerType>("shot");
   const [eventComposerPlayerId, setEventComposerPlayerId] = useState("");
   const [eventComposerAssisterId, setEventComposerAssisterId] = useState("");
   const [eventComposerGoalPoint, setEventComposerGoalPoint] = useState<{ y: number; z: number } | null>(null);
@@ -628,9 +638,9 @@ export function CollectionView({
         </div>
       ) : null}
       {isResetConfirmationOpen ? (
-        <div className="fixture-composer-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-match-title">
+        <div className="fixture-composer-overlay confirmation-dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-match-title">
           <form
-            className="fixture-composer"
+            className="fixture-composer confirmation-dialog"
             onSubmit={(event) => {
               event.preventDefault();
               void handleResetMatch();
@@ -732,13 +742,14 @@ export function CollectionView({
         </div>
       ) : null}
       {isEventComposerOpen ? (
-        <div className="fixture-composer-overlay" role="dialog" aria-modal="true">
+        <div className="fixture-composer-overlay event-entry-overlay" role="dialog" aria-modal="true">
           <div className="fixture-composer event-composer">
-            <h3>Capture Event</h3>
+            <h3>Create {eventComposerLabels[eventComposerType]}</h3>
             <div className="event-type-toggle">
               <button
                 type="button"
-                className={`button ${eventComposerType === "shot" ? "primary" : "secondary"}`}
+                className={`event-type-button shot ${eventComposerType === "shot" ? "active" : ""}`}
+                aria-label="Shot"
                 onClick={() => {
                   setEventComposerType("shot");
                   setEventComposerAssisterId("");
@@ -752,11 +763,12 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                Shot
+                <ShotIcon />
               </button>
               <button
                 type="button"
-                className={`button ${eventComposerType === "shot_against" ? "primary" : "secondary"}`}
+                className={`event-type-button shot-against ${eventComposerType === "shot_against" ? "active" : ""}`}
+                aria-label="Shot against"
                 onClick={() => {
                   setEventComposerType("shot_against");
                   setEventComposerGoalPoint(null);
@@ -764,11 +776,12 @@ export function CollectionView({
                   setEventComposerPlayerId(predictGoalkeeperPlayerId());
                 }}
               >
-                Shot Against
+                <ShotAgainstIcon />
               </button>
               <button
                 type="button"
-                className={`button ${eventComposerType === "tackle" ? "primary" : "secondary"}`}
+                className={`event-type-button tackle ${eventComposerType === "tackle" ? "active" : ""}`}
+                aria-label="Tackle"
                 onClick={() => {
                   setEventComposerType("tackle");
                   setEventComposerAssisterId("");
@@ -782,11 +795,12 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                Tackle
+                <TackleIcon />
               </button>
               <button
                 type="button"
-                className={`button ${eventComposerType === "interception" ? "primary" : "secondary"}`}
+                className={`event-type-button interception ${eventComposerType === "interception" ? "active" : ""}`}
+                aria-label="Interception"
                 onClick={() => {
                   setEventComposerType("interception");
                   setEventComposerAssisterId("");
@@ -800,7 +814,7 @@ export function CollectionView({
                   setEventComposerPlayerId(predictedPlayerId ?? "");
                 }}
               >
-                Interception
+                <InterceptionIcon />
               </button>
             </div>
             <div className="event-composer-body">
@@ -818,7 +832,11 @@ export function CollectionView({
                     </button>
                   ))}
                 </div>
-                <p className="muted">Closest tactical fit is preselected; tap another number to override.</p>
+                <p className="event-selection-label" aria-live="polite">
+                  {eventComposerPlayerId
+                    ? `Player: ${collectionEventPlayers.find((player) => player.id === eventComposerPlayerId)?.display_name ?? "Unknown player"}`
+                    : "Select a player"}
+                </p>
                 {collectionEventPlayers.length === 0 ? (
                   <p className="muted">No matchday squad players available for this fixture.</p>
                 ) : null}
@@ -843,6 +861,11 @@ export function CollectionView({
                       </button>
                     ))}
                   </div>
+                  <p className="event-selection-label" aria-live="polite">
+                    {eventComposerAssisterId
+                      ? `Key pass: ${collectionEventPlayers.find((player) => player.id === eventComposerAssisterId)?.display_name ?? "Unknown player"}`
+                      : "No key-pass player selected"}
+                  </p>
                 </div>
               ) : null}
               {eventComposerType === "shot" || eventComposerType === "shot_against" ? (
@@ -857,17 +880,6 @@ export function CollectionView({
                     viewPaddingTopFt={6}
                     viewPaddingBottomFt={1.5}
                   />
-                  <p className="muted">
-                    {eventComposerGoalPoint
-                      ? `Goal mouth Y ${eventComposerGoalPoint.y.toFixed(1)} (0-100), Z ${eventComposerGoalPoint.z.toFixed(1)}ft (0-20)`
-                      : "Optional: click inside the goal frame to set goal-mouth coordinates"}
-                  </p>
-                  {selectedCollectionGoalDimensions ? (
-                    <p className="muted">
-                      Reference goal size for {collectionSessionLive?.format.replace("_", " ")}:{" "}
-                      {selectedCollectionGoalDimensions.width_ft}ft x {selectedCollectionGoalDimensions.height_ft}ft
-                    </p>
-                  ) : null}
                   <div className="event-outcome-actions">
                     {eventOutcomeOptions.map((option) => (
                       <button
