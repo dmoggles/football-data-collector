@@ -2399,6 +2399,7 @@ textarea:focus-visible,
 @media (max-width: 1023px) {
   :root { --app-rail-width: 64px; }
   .route-content { padding: 24px; }
+  .immersive-shell .collection-header-row { padding-right: 76px; }
   .stats-grid article:nth-child(5),
   .stats-grid article:nth-child(6) { grid-column: span 3; }
 }
@@ -2597,9 +2598,6 @@ textarea:focus-visible,
   }
   .immersive-shell .collection-screen {
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-  }
-  .immersive-shell .collection-header-row {
-    padding-right: 76px;
   }
   .immersive-shell .collection-pitch-wrap .pitch-surface {
     width: min(100%, calc((100svh - 205px) * 0.64));
