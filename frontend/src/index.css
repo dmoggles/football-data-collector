@@ -1309,12 +1309,8 @@ textarea {
   background: rgba(5, 9, 13, 0.62);
   display: grid;
   place-items: center;
-  z-index: 20;
-  padding: 1rem;
-}
-
-.confirmation-dialog-overlay {
   z-index: 1100;
+  padding: 1rem;
 }
 
 .confirmation-dialog {
